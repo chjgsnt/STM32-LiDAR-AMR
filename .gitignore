@@ -1,0 +1,57 @@
+# STM32 build outputs
+Debug/
+Release/
+build/
+Build/
+cmake-build-*/
+*/Debug/
+*/Release/
+*/build/
+
+# Object and firmware artifacts
+*.o
+*.obj
+*.d
+*.su
+*.elf
+*.axf
+*.hex
+*.bin
+*.map
+*.lst
+*.out
+*.a
+
+# CMake and generated build files
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
+
+# STM32CubeIDE workspace-local files
+.metadata/
+.recommenders/
+RemoteSystemsTempFiles/
+
+# VSCode local configuration
+.vscode/*
+!.vscode/extensions.json
+!.vscode/tasks.json
+!.vscode/launch.json
+
+# Editor and OS temporary files
+*.tmp
+*.temp
+*.bak
+*.orig
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Local environment files
+.env
+.env.*
+!.env.example
