@@ -13,7 +13,15 @@
 #define I2C1_SDA_GPIO_PORT GPIOB
 #define I2C1_SDA_PIN GPIO_PIN_9
 #define MPU6500_I2C_ADDR_7BIT 0x68U
+#define MPU6500_RAW_DATA_START_REG 0x3BU
+#define MPU6500_PWR_MGMT_1_REG 0x6BU
 #define MPU6500_WHO_AM_I_REG 0x75U
+#define MPU6500_RAW_DATA_LEN 14U
+
+static int16_t I2C_CombineInt16(uint8_t high, uint8_t low)
+{
+    return (int16_t)((uint16_t)high << 8 | low);
+}
 
 void I2C_ReadMpu6500WhoAmI(void)
 {
@@ -37,6 +45,59 @@ void I2C_ReadMpu6500WhoAmI(void)
     {
         LOG_INFO("MPU6500 WHO_AM_I read failed, error=0x%08lX.", (unsigned long)HAL_I2C_GetError(&hi2c1));
     }
+}
+
+void I2C_WakeMpu6500(void)
+{
+    uint8_t value = 0x00U;
+    HAL_StatusTypeDef ret = HAL_I2C_Mem_Write(&hi2c1,
+                                              (uint16_t)(MPU6500_I2C_ADDR_7BIT << 1),
+                                              MPU6500_PWR_MGMT_1_REG,
+                                              I2C_MEMADD_SIZE_8BIT,
+                                              &value,
+                                              1U,
+                                              100U);
+
+    if (ret != HAL_OK)
+    {
+        LOG_INFO("MPU6500 wake failed, error=0x%08lX.", (unsigned long)HAL_I2C_GetError(&hi2c1));
+        return;
+    }
+
+    HAL_Delay(100U);
+}
+
+void I2C_ReadMpu6500Raw(void)
+{
+    uint8_t raw[MPU6500_RAW_DATA_LEN] = {0U};
+    HAL_StatusTypeDef ret = HAL_I2C_Mem_Read(&hi2c1,
+                                             (uint16_t)(MPU6500_I2C_ADDR_7BIT << 1),
+                                             MPU6500_RAW_DATA_START_REG,
+                                             I2C_MEMADD_SIZE_8BIT,
+                                             raw,
+                                             MPU6500_RAW_DATA_LEN,
+                                             100U);
+
+    if (ret != HAL_OK)
+    {
+        LOG_INFO("MPU6500 raw read failed, error=0x%08lX.", (unsigned long)HAL_I2C_GetError(&hi2c1));
+        return;
+    }
+
+    int16_t ax = I2C_CombineInt16(raw[0], raw[1]);
+    int16_t ay = I2C_CombineInt16(raw[2], raw[3]);
+    int16_t az = I2C_CombineInt16(raw[4], raw[5]);
+    int16_t gx = I2C_CombineInt16(raw[8], raw[9]);
+    int16_t gy = I2C_CombineInt16(raw[10], raw[11]);
+    int16_t gz = I2C_CombineInt16(raw[12], raw[13]);
+
+    LOG_INFO("MPU6500 raw: ax=%d, ay=%d, az=%d, gx=%d, gy=%d, gz=%d.",
+             (int)ax,
+             (int)ay,
+             (int)az,
+             (int)gx,
+             (int)gy,
+             (int)gz);
 }
 
 static void I2C_RunOledDisplayTest(uint8_t addr)

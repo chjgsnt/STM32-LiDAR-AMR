@@ -174,12 +174,22 @@ void StartDefaultTask(void *argument)
   LOG_INFO("FreeRTOS started.");
   I2C_ScanBus();
   I2C_ReadMpu6500WhoAmI();
+  I2C_WakeMpu6500();
 
   /* Infinite loop */
+  uint8_t led_tick = 0U;
   for(;;)
   {
-    HAL_GPIO_TogglePin(BRINGUP_LED_GPIO_PORT, BRINGUP_LED_PIN);
-    osDelay(1000);
+    I2C_ReadMpu6500Raw();
+
+    led_tick++;
+    if (led_tick >= 2U)
+    {
+      HAL_GPIO_TogglePin(BRINGUP_LED_GPIO_PORT, BRINGUP_LED_PIN);
+      led_tick = 0U;
+    }
+
+    osDelay(500);
   }
   /* USER CODE END StartDefaultTask */
 }
