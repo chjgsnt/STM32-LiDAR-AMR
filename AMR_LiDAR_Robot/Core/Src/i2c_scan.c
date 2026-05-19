@@ -5,6 +5,7 @@
 #include "i2c.h"
 #include "ssd1306.h"
 
+#include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -18,6 +19,8 @@
 #define MPU6500_WHO_AM_I_REG 0x75U
 #define MPU6500_RAW_DATA_LEN 14U
 #define MPU6500_GYRO_CALIBRATION_SAMPLES 200U
+#define MPU6500_ACCEL_LSB_PER_G 16384.0f
+#define MPU6500_PI 3.14159265358979323846f
 
 static int32_t gyro_bias_x = 0;
 static int32_t gyro_bias_y = 0;
@@ -55,6 +58,18 @@ static uint32_t I2C_FixedFraction(int32_t value, int32_t decimal_scale)
 {
     int32_t abs_value = (value < 0) ? -value : value;
     return (uint32_t)(abs_value % decimal_scale);
+}
+
+static int32_t I2C_ScaleFloatRounded(float value, float multiplier)
+{
+    float scaled = value * multiplier;
+
+    if (scaled < 0.0f)
+    {
+        return (int32_t)(scaled - 0.5f);
+    }
+
+    return (int32_t)(scaled + 0.5f);
 }
 
 static HAL_StatusTypeDef I2C_ReadMpu6500RawValues(int16_t *ax,
@@ -194,6 +209,13 @@ void I2C_ReadMpu6500Raw(void)
     int32_t gx_tenth_dps = I2C_ScaleRawRounded((int32_t)gx - gyro_bias_x, 10, 131);
     int32_t gy_tenth_dps = I2C_ScaleRawRounded((int32_t)gy - gyro_bias_y, 10, 131);
     int32_t gz_tenth_dps = I2C_ScaleRawRounded((int32_t)gz - gyro_bias_z, 10, 131);
+    float ax_g = (float)ax / MPU6500_ACCEL_LSB_PER_G;
+    float ay_g = (float)ay / MPU6500_ACCEL_LSB_PER_G;
+    float az_g = (float)az / MPU6500_ACCEL_LSB_PER_G;
+    float roll_deg = atan2f(ay_g, az_g) * 180.0f / MPU6500_PI;
+    float pitch_deg = atan2f(-ax_g, sqrtf((ay_g * ay_g) + (az_g * az_g))) * 180.0f / MPU6500_PI;
+    int32_t pitch_tenth_deg = I2C_ScaleFloatRounded(pitch_deg, 10.0f);
+    int32_t roll_tenth_deg = I2C_ScaleFloatRounded(roll_deg, 10.0f);
 
     LOG_INFO("MPU6500 raw: ax=%d, ay=%d, az=%d, gx=%d, gy=%d, gz=%d.",
              (int)ax,
@@ -221,6 +243,13 @@ void I2C_ReadMpu6500Raw(void)
              I2C_FixedSign(gz_tenth_dps),
              (unsigned long)I2C_FixedWhole(gz_tenth_dps, 10),
              (unsigned long)I2C_FixedFraction(gz_tenth_dps, 10));
+    LOG_INFO("MPU6500 angle: pitch=%s%lu.%01ludeg roll=%s%lu.%01ludeg",
+             I2C_FixedSign(pitch_tenth_deg),
+             (unsigned long)I2C_FixedWhole(pitch_tenth_deg, 10),
+             (unsigned long)I2C_FixedFraction(pitch_tenth_deg, 10),
+             I2C_FixedSign(roll_tenth_deg),
+             (unsigned long)I2C_FixedWhole(roll_tenth_deg, 10),
+             (unsigned long)I2C_FixedFraction(roll_tenth_deg, 10));
 }
 
 static void I2C_RunOledDisplayTest(uint8_t addr)
