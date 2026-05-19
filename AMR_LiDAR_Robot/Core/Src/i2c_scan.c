@@ -23,6 +23,35 @@ static int16_t I2C_CombineInt16(uint8_t high, uint8_t low)
     return (int16_t)((uint16_t)high << 8 | low);
 }
 
+static int32_t I2C_ScaleRawRounded(int16_t raw, int32_t multiplier, int32_t divisor)
+{
+    int32_t scaled = (int32_t)raw * multiplier;
+
+    if (scaled < 0)
+    {
+        return -((-scaled + (divisor / 2)) / divisor);
+    }
+
+    return (scaled + (divisor / 2)) / divisor;
+}
+
+static const char *I2C_FixedSign(int32_t value)
+{
+    return (value < 0) ? "-" : "";
+}
+
+static uint32_t I2C_FixedWhole(int32_t value, int32_t decimal_scale)
+{
+    int32_t abs_value = (value < 0) ? -value : value;
+    return (uint32_t)(abs_value / decimal_scale);
+}
+
+static uint32_t I2C_FixedFraction(int32_t value, int32_t decimal_scale)
+{
+    int32_t abs_value = (value < 0) ? -value : value;
+    return (uint32_t)(abs_value % decimal_scale);
+}
+
 void I2C_ReadMpu6500WhoAmI(void)
 {
     uint8_t who = 0U;
@@ -90,6 +119,12 @@ void I2C_ReadMpu6500Raw(void)
     int16_t gx = I2C_CombineInt16(raw[8], raw[9]);
     int16_t gy = I2C_CombineInt16(raw[10], raw[11]);
     int16_t gz = I2C_CombineInt16(raw[12], raw[13]);
+    int32_t ax_centi_g = I2C_ScaleRawRounded(ax, 100, 16384);
+    int32_t ay_centi_g = I2C_ScaleRawRounded(ay, 100, 16384);
+    int32_t az_centi_g = I2C_ScaleRawRounded(az, 100, 16384);
+    int32_t gx_tenth_dps = I2C_ScaleRawRounded(gx, 10, 131);
+    int32_t gy_tenth_dps = I2C_ScaleRawRounded(gy, 10, 131);
+    int32_t gz_tenth_dps = I2C_ScaleRawRounded(gz, 10, 131);
 
     LOG_INFO("MPU6500 raw: ax=%d, ay=%d, az=%d, gx=%d, gy=%d, gz=%d.",
              (int)ax,
@@ -98,6 +133,25 @@ void I2C_ReadMpu6500Raw(void)
              (int)gx,
              (int)gy,
              (int)gz);
+    LOG_INFO("MPU6500: ax=%s%lu.%02lug ay=%s%lu.%02lug az=%s%lu.%02lug gx=%s%lu.%01ludps gy=%s%lu.%01ludps gz=%s%lu.%01ludps",
+             I2C_FixedSign(ax_centi_g),
+             (unsigned long)I2C_FixedWhole(ax_centi_g, 100),
+             (unsigned long)I2C_FixedFraction(ax_centi_g, 100),
+             I2C_FixedSign(ay_centi_g),
+             (unsigned long)I2C_FixedWhole(ay_centi_g, 100),
+             (unsigned long)I2C_FixedFraction(ay_centi_g, 100),
+             I2C_FixedSign(az_centi_g),
+             (unsigned long)I2C_FixedWhole(az_centi_g, 100),
+             (unsigned long)I2C_FixedFraction(az_centi_g, 100),
+             I2C_FixedSign(gx_tenth_dps),
+             (unsigned long)I2C_FixedWhole(gx_tenth_dps, 10),
+             (unsigned long)I2C_FixedFraction(gx_tenth_dps, 10),
+             I2C_FixedSign(gy_tenth_dps),
+             (unsigned long)I2C_FixedWhole(gy_tenth_dps, 10),
+             (unsigned long)I2C_FixedFraction(gy_tenth_dps, 10),
+             I2C_FixedSign(gz_tenth_dps),
+             (unsigned long)I2C_FixedWhole(gz_tenth_dps, 10),
+             (unsigned long)I2C_FixedFraction(gz_tenth_dps, 10));
 }
 
 static void I2C_RunOledDisplayTest(uint8_t addr)
