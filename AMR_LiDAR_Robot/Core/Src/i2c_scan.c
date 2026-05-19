@@ -40,7 +40,7 @@
 #endif
 
 #ifndef MPU6500_LOG_FUSED_ANGLE
-#define MPU6500_LOG_FUSED_ANGLE 1
+#define MPU6500_LOG_FUSED_ANGLE 0
 #endif
 
 #ifndef MPU6500_LOG_FILTER_DEBUG
@@ -120,6 +120,7 @@ static int32_t I2C_ScaleRawRounded(int32_t raw, int32_t multiplier, int32_t divi
     return (scaled + (divisor / 2)) / divisor;
 }
 
+#if (MPU6500_LOG_UNITS || MPU6500_LOG_ACCEL_ANGLE || MPU6500_LOG_FUSED_ANGLE || MPU6500_LOG_FILTER_DEBUG)
 static const char *I2C_FixedSign(int32_t value)
 {
     return (value < 0) ? "-" : "";
@@ -148,6 +149,7 @@ static int32_t I2C_ScaleFloatRounded(float value, float multiplier)
 
     return (int32_t)(scaled + 0.5f);
 }
+#endif
 
 static HAL_StatusTypeDef I2C_ReadMpu6500RawValues(int16_t *ax,
                                                   int16_t *ay,
