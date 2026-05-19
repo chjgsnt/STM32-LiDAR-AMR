@@ -173,6 +173,7 @@ void StartDefaultTask(void *argument)
   /* USER CODE BEGIN StartDefaultTask */
   LOG_INFO("FreeRTOS started.");
   I2C_ScanBus();
+  I2C_ReadMpu6500WhoAmI();
 
   /* Infinite loop */
   for(;;)

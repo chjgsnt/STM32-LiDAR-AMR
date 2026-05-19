@@ -10,5 +10,6 @@
  */
 
 void I2C_ScanBus(void);
+void I2C_ReadMpu6500WhoAmI(void);
 
 #endif /* I2C_SCAN_H */

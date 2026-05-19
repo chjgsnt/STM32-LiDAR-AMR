@@ -12,6 +12,32 @@
 #define I2C1_SCL_PIN GPIO_PIN_8
 #define I2C1_SDA_GPIO_PORT GPIOB
 #define I2C1_SDA_PIN GPIO_PIN_9
+#define MPU6500_I2C_ADDR_7BIT 0x68U
+#define MPU6500_WHO_AM_I_REG 0x75U
+
+void I2C_ReadMpu6500WhoAmI(void)
+{
+    uint8_t who = 0U;
+
+    LOG_INFO("MPU6500 WHO_AM_I read start.");
+
+    HAL_StatusTypeDef ret = HAL_I2C_Mem_Read(&hi2c1,
+                                             (uint16_t)(MPU6500_I2C_ADDR_7BIT << 1),
+                                             MPU6500_WHO_AM_I_REG,
+                                             I2C_MEMADD_SIZE_8BIT,
+                                             &who,
+                                             1U,
+                                             100U);
+
+    if (ret == HAL_OK)
+    {
+        LOG_INFO("MPU6500 WHO_AM_I = 0x%02X.", who);
+    }
+    else
+    {
+        LOG_INFO("MPU6500 WHO_AM_I read failed, error=0x%08lX.", (unsigned long)HAL_I2C_GetError(&hi2c1));
+    }
+}
 
 static void I2C_RunOledDisplayTest(uint8_t addr)
 {
