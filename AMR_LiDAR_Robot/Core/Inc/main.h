@@ -73,6 +73,17 @@ void Error_Handler(void);
 #define SWO_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
+#ifndef APP_ENABLE_MOTOR_TEST
+#define APP_ENABLE_MOTOR_TEST 1
+#endif
+
+#ifndef APP_ENABLE_MOTOR_GPIO_STATIC_TEST
+#define APP_ENABLE_MOTOR_GPIO_STATIC_TEST 0
+#endif
+
+#ifndef APP_ENABLE_I2C_BUS_RECOVERY
+#define APP_ENABLE_I2C_BUS_RECOVERY 1
+#endif
 
 /* USER CODE END Private defines */
 
