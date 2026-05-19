@@ -183,22 +183,6 @@ void MX_TIM4_Init(void)
 
 }
 
-void HAL_TIM_Base_MspInit(TIM_HandleTypeDef* tim_baseHandle)
-{
-
-  if(tim_baseHandle->Instance==TIM3)
-  {
-  /* USER CODE BEGIN TIM3_MspInit 0 */
-
-  /* USER CODE END TIM3_MspInit 0 */
-    /* TIM3 clock enable */
-    __HAL_RCC_TIM3_CLK_ENABLE();
-  /* USER CODE BEGIN TIM3_MspInit 1 */
-
-  /* USER CODE END TIM3_MspInit 1 */
-  }
-}
-
 void HAL_TIM_Encoder_MspInit(TIM_HandleTypeDef* tim_encoderHandle)
 {
 
@@ -252,6 +236,22 @@ void HAL_TIM_Encoder_MspInit(TIM_HandleTypeDef* tim_encoderHandle)
   /* USER CODE END TIM4_MspInit 1 */
   }
 }
+
+void HAL_TIM_Base_MspInit(TIM_HandleTypeDef* tim_baseHandle)
+{
+
+  if(tim_baseHandle->Instance==TIM3)
+  {
+  /* USER CODE BEGIN TIM3_MspInit 0 */
+
+  /* USER CODE END TIM3_MspInit 0 */
+    /* TIM3 clock enable */
+    __HAL_RCC_TIM3_CLK_ENABLE();
+  /* USER CODE BEGIN TIM3_MspInit 1 */
+
+  /* USER CODE END TIM3_MspInit 1 */
+  }
+}
 void HAL_TIM_MspPostInit(TIM_HandleTypeDef* timHandle)
 {
 
@@ -263,6 +263,7 @@ void HAL_TIM_MspPostInit(TIM_HandleTypeDef* timHandle)
   /* USER CODE END TIM3_MspPostInit 0 */
 
     __HAL_RCC_GPIOA_CLK_ENABLE();
+    __HAL_RCC_GPIOB_CLK_ENABLE();
     /**TIM3 GPIO Configuration
     PA6     ------> TIM3_CH1
     PA7     ------> TIM3_CH2
@@ -276,7 +277,6 @@ void HAL_TIM_MspPostInit(TIM_HandleTypeDef* timHandle)
     GPIO_InitStruct.Alternate = GPIO_AF2_TIM3;
     HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-    __HAL_RCC_GPIOB_CLK_ENABLE();
     GPIO_InitStruct.Pin = GPIO_PIN_0|GPIO_PIN_1;
     GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
@@ -289,22 +289,6 @@ void HAL_TIM_MspPostInit(TIM_HandleTypeDef* timHandle)
   /* USER CODE END TIM3_MspPostInit 1 */
   }
 
-}
-
-void HAL_TIM_Base_MspDeInit(TIM_HandleTypeDef* tim_baseHandle)
-{
-
-  if(tim_baseHandle->Instance==TIM3)
-  {
-  /* USER CODE BEGIN TIM3_MspDeInit 0 */
-
-  /* USER CODE END TIM3_MspDeInit 0 */
-    /* Peripheral clock disable */
-    __HAL_RCC_TIM3_CLK_DISABLE();
-  /* USER CODE BEGIN TIM3_MspDeInit 1 */
-
-  /* USER CODE END TIM3_MspDeInit 1 */
-  }
 }
 
 void HAL_TIM_Encoder_MspDeInit(TIM_HandleTypeDef* tim_encoderHandle)
@@ -345,6 +329,22 @@ void HAL_TIM_Encoder_MspDeInit(TIM_HandleTypeDef* tim_encoderHandle)
   /* USER CODE BEGIN TIM4_MspDeInit 1 */
 
   /* USER CODE END TIM4_MspDeInit 1 */
+  }
+}
+
+void HAL_TIM_Base_MspDeInit(TIM_HandleTypeDef* tim_baseHandle)
+{
+
+  if(tim_baseHandle->Instance==TIM3)
+  {
+  /* USER CODE BEGIN TIM3_MspDeInit 0 */
+
+  /* USER CODE END TIM3_MspDeInit 0 */
+    /* Peripheral clock disable */
+    __HAL_RCC_TIM3_CLK_DISABLE();
+  /* USER CODE BEGIN TIM3_MspDeInit 1 */
+
+  /* USER CODE END TIM3_MspDeInit 1 */
   }
 }
 

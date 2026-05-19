@@ -17,10 +17,10 @@ Scope:
 ```text
 [000123 ms] System start!
 [000240 ms] FreeRTOS started.
-[000510 ms] I2C scan start.
+[000510 ms] I2C scan started.
 [000620 ms] I2C device found at 0x3C.
 [000620 ms] OLED found at 0x3C.
-[000900 ms] I2C scan done.
+[000900 ms] I2C scan finished.
 ```
 
 If no I2C devices respond:
@@ -28,10 +28,10 @@ If no I2C devices respond:
 ```text
 [000123 ms] System start!
 [000240 ms] FreeRTOS started.
-[000510 ms] I2C scan start.
+[000510 ms] I2C scan started.
 [001800 ms] No I2C devices found.
 [001800 ms] OLED not found.
-[001800 ms] I2C scan done.
+[001800 ms] I2C scan finished.
 ```
 
 ## Hardware Notes
