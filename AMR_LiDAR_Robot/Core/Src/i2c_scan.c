@@ -17,15 +17,20 @@
 #define MPU6500_PWR_MGMT_1_REG 0x6BU
 #define MPU6500_WHO_AM_I_REG 0x75U
 #define MPU6500_RAW_DATA_LEN 14U
+#define MPU6500_GYRO_CALIBRATION_SAMPLES 200U
+
+static int32_t gyro_bias_x = 0;
+static int32_t gyro_bias_y = 0;
+static int32_t gyro_bias_z = 0;
 
 static int16_t I2C_CombineInt16(uint8_t high, uint8_t low)
 {
     return (int16_t)((uint16_t)high << 8 | low);
 }
 
-static int32_t I2C_ScaleRawRounded(int16_t raw, int32_t multiplier, int32_t divisor)
+static int32_t I2C_ScaleRawRounded(int32_t raw, int32_t multiplier, int32_t divisor)
 {
-    int32_t scaled = (int32_t)raw * multiplier;
+    int32_t scaled = raw * multiplier;
 
     if (scaled < 0)
     {
@@ -50,6 +55,37 @@ static uint32_t I2C_FixedFraction(int32_t value, int32_t decimal_scale)
 {
     int32_t abs_value = (value < 0) ? -value : value;
     return (uint32_t)(abs_value % decimal_scale);
+}
+
+static HAL_StatusTypeDef I2C_ReadMpu6500RawValues(int16_t *ax,
+                                                  int16_t *ay,
+                                                  int16_t *az,
+                                                  int16_t *gx,
+                                                  int16_t *gy,
+                                                  int16_t *gz)
+{
+    uint8_t raw[MPU6500_RAW_DATA_LEN] = {0U};
+    HAL_StatusTypeDef ret = HAL_I2C_Mem_Read(&hi2c1,
+                                             (uint16_t)(MPU6500_I2C_ADDR_7BIT << 1),
+                                             MPU6500_RAW_DATA_START_REG,
+                                             I2C_MEMADD_SIZE_8BIT,
+                                             raw,
+                                             MPU6500_RAW_DATA_LEN,
+                                             100U);
+
+    if (ret != HAL_OK)
+    {
+        return ret;
+    }
+
+    *ax = I2C_CombineInt16(raw[0], raw[1]);
+    *ay = I2C_CombineInt16(raw[2], raw[3]);
+    *az = I2C_CombineInt16(raw[4], raw[5]);
+    *gx = I2C_CombineInt16(raw[8], raw[9]);
+    *gy = I2C_CombineInt16(raw[10], raw[11]);
+    *gz = I2C_CombineInt16(raw[12], raw[13]);
+
+    return HAL_OK;
 }
 
 void I2C_ReadMpu6500WhoAmI(void)
@@ -96,16 +132,55 @@ void I2C_WakeMpu6500(void)
     HAL_Delay(100U);
 }
 
+void I2C_CalibrateMpu6500Gyro(void)
+{
+    int32_t sum_gx = 0;
+    int32_t sum_gy = 0;
+    int32_t sum_gz = 0;
+
+    LOG_INFO("MPU6500 gyro calibration start, keep sensor still.");
+
+    for (uint16_t i = 0U; i < MPU6500_GYRO_CALIBRATION_SAMPLES; i++)
+    {
+        int16_t ax = 0;
+        int16_t ay = 0;
+        int16_t az = 0;
+        int16_t gx = 0;
+        int16_t gy = 0;
+        int16_t gz = 0;
+        HAL_StatusTypeDef ret = I2C_ReadMpu6500RawValues(&ax, &ay, &az, &gx, &gy, &gz);
+
+        if (ret != HAL_OK)
+        {
+            LOG_INFO("MPU6500 gyro calibration read failed, error=0x%08lX.", (unsigned long)HAL_I2C_GetError(&hi2c1));
+            return;
+        }
+
+        sum_gx += gx;
+        sum_gy += gy;
+        sum_gz += gz;
+        HAL_Delay(5U);
+    }
+
+    gyro_bias_x = I2C_ScaleRawRounded(sum_gx, 1, MPU6500_GYRO_CALIBRATION_SAMPLES);
+    gyro_bias_y = I2C_ScaleRawRounded(sum_gy, 1, MPU6500_GYRO_CALIBRATION_SAMPLES);
+    gyro_bias_z = I2C_ScaleRawRounded(sum_gz, 1, MPU6500_GYRO_CALIBRATION_SAMPLES);
+
+    LOG_INFO("MPU6500 gyro bias raw: gx=%ld, gy=%ld, gz=%ld.",
+             (long)gyro_bias_x,
+             (long)gyro_bias_y,
+             (long)gyro_bias_z);
+}
+
 void I2C_ReadMpu6500Raw(void)
 {
-    uint8_t raw[MPU6500_RAW_DATA_LEN] = {0U};
-    HAL_StatusTypeDef ret = HAL_I2C_Mem_Read(&hi2c1,
-                                             (uint16_t)(MPU6500_I2C_ADDR_7BIT << 1),
-                                             MPU6500_RAW_DATA_START_REG,
-                                             I2C_MEMADD_SIZE_8BIT,
-                                             raw,
-                                             MPU6500_RAW_DATA_LEN,
-                                             100U);
+    int16_t ax = 0;
+    int16_t ay = 0;
+    int16_t az = 0;
+    int16_t gx = 0;
+    int16_t gy = 0;
+    int16_t gz = 0;
+    HAL_StatusTypeDef ret = I2C_ReadMpu6500RawValues(&ax, &ay, &az, &gx, &gy, &gz);
 
     if (ret != HAL_OK)
     {
@@ -113,18 +188,12 @@ void I2C_ReadMpu6500Raw(void)
         return;
     }
 
-    int16_t ax = I2C_CombineInt16(raw[0], raw[1]);
-    int16_t ay = I2C_CombineInt16(raw[2], raw[3]);
-    int16_t az = I2C_CombineInt16(raw[4], raw[5]);
-    int16_t gx = I2C_CombineInt16(raw[8], raw[9]);
-    int16_t gy = I2C_CombineInt16(raw[10], raw[11]);
-    int16_t gz = I2C_CombineInt16(raw[12], raw[13]);
     int32_t ax_centi_g = I2C_ScaleRawRounded(ax, 100, 16384);
     int32_t ay_centi_g = I2C_ScaleRawRounded(ay, 100, 16384);
     int32_t az_centi_g = I2C_ScaleRawRounded(az, 100, 16384);
-    int32_t gx_tenth_dps = I2C_ScaleRawRounded(gx, 10, 131);
-    int32_t gy_tenth_dps = I2C_ScaleRawRounded(gy, 10, 131);
-    int32_t gz_tenth_dps = I2C_ScaleRawRounded(gz, 10, 131);
+    int32_t gx_tenth_dps = I2C_ScaleRawRounded((int32_t)gx - gyro_bias_x, 10, 131);
+    int32_t gy_tenth_dps = I2C_ScaleRawRounded((int32_t)gy - gyro_bias_y, 10, 131);
+    int32_t gz_tenth_dps = I2C_ScaleRawRounded((int32_t)gz - gyro_bias_z, 10, 131);
 
     LOG_INFO("MPU6500 raw: ax=%d, ay=%d, az=%d, gx=%d, gy=%d, gz=%d.",
              (int)ax,

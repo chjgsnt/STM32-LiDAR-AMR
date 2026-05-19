@@ -175,6 +175,7 @@ void StartDefaultTask(void *argument)
   I2C_ScanBus();
   I2C_ReadMpu6500WhoAmI();
   I2C_WakeMpu6500();
+  I2C_CalibrateMpu6500Gyro();
 
   /* Infinite loop */
   uint8_t led_tick = 0U;
