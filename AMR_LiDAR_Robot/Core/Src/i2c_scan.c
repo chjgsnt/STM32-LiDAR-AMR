@@ -25,6 +25,26 @@
 #define MPU6500_LOG_INTERVAL_MS 500U
 #define MPU6500_PI 3.14159265358979323846f
 
+#ifndef MPU6500_LOG_RAW
+#define MPU6500_LOG_RAW 0
+#endif
+
+#ifndef MPU6500_LOG_UNITS
+#define MPU6500_LOG_UNITS 0
+#endif
+
+#ifndef MPU6500_LOG_ACCEL_ANGLE
+#define MPU6500_LOG_ACCEL_ANGLE 0
+#endif
+
+#ifndef MPU6500_LOG_FUSED_ANGLE
+#define MPU6500_LOG_FUSED_ANGLE 1
+#endif
+
+#ifndef MPU6500_LOG_FILTER_DEBUG
+#define MPU6500_LOG_FILTER_DEBUG 0
+#endif
+
 static int32_t gyro_bias_x = 0;
 static int32_t gyro_bias_y = 0;
 static int32_t gyro_bias_z = 0;
@@ -219,15 +239,19 @@ void I2C_ReadMpu6500Raw(void)
         return;
     }
 
+#if MPU6500_LOG_UNITS
     int32_t ax_centi_g = I2C_ScaleRawRounded(ax, 100, 16384);
     int32_t ay_centi_g = I2C_ScaleRawRounded(ay, 100, 16384);
     int32_t az_centi_g = I2C_ScaleRawRounded(az, 100, 16384);
+#endif
     float gx_dps = (float)((int32_t)gx - gyro_bias_x) / MPU6500_GYRO_LSB_PER_DPS;
     float gy_dps = (float)((int32_t)gy - gyro_bias_y) / MPU6500_GYRO_LSB_PER_DPS;
+#if MPU6500_LOG_UNITS
     float gz_dps = (float)((int32_t)gz - gyro_bias_z) / MPU6500_GYRO_LSB_PER_DPS;
     int32_t gx_tenth_dps = I2C_ScaleFloatRounded(gx_dps, 10.0f);
     int32_t gy_tenth_dps = I2C_ScaleFloatRounded(gy_dps, 10.0f);
     int32_t gz_tenth_dps = I2C_ScaleFloatRounded(gz_dps, 10.0f);
+#endif
     float ax_g = (float)ax / MPU6500_ACCEL_LSB_PER_G;
     float ay_g = (float)ay / MPU6500_ACCEL_LSB_PER_G;
     float az_g = (float)az / MPU6500_ACCEL_LSB_PER_G;
@@ -268,12 +292,19 @@ void I2C_ReadMpu6500Raw(void)
 
     mpu6500_last_log_ms = now_ms;
 
+#if MPU6500_LOG_ACCEL_ANGLE
     int32_t accel_pitch_tenth_deg = I2C_ScaleFloatRounded(accel_pitch_deg, 10.0f);
     int32_t accel_roll_tenth_deg = I2C_ScaleFloatRounded(accel_roll_deg, 10.0f);
+#endif
+#if MPU6500_LOG_FUSED_ANGLE
     int32_t fused_pitch_tenth_deg = I2C_ScaleFloatRounded(complementary_pitch_deg, 10.0f);
     int32_t fused_roll_tenth_deg = I2C_ScaleFloatRounded(complementary_roll_deg, 10.0f);
+#endif
+#if MPU6500_LOG_FILTER_DEBUG
     int32_t filter_dt_millis = I2C_ScaleFloatRounded(complementary_last_dt_s, 1000.0f);
+#endif
 
+#if MPU6500_LOG_RAW
     LOG_INFO("MPU6500 raw: ax=%d, ay=%d, az=%d, gx=%d, gy=%d, gz=%d.",
              (int)ax,
              (int)ay,
@@ -281,6 +312,8 @@ void I2C_ReadMpu6500Raw(void)
              (int)gx,
              (int)gy,
              (int)gz);
+#endif
+#if MPU6500_LOG_UNITS
     LOG_INFO("MPU6500: ax=%s%lu.%02lug ay=%s%lu.%02lug az=%s%lu.%02lug gx=%s%lu.%01ludps gy=%s%lu.%01ludps gz=%s%lu.%01ludps",
              I2C_FixedSign(ax_centi_g),
              (unsigned long)I2C_FixedWhole(ax_centi_g, 100),
@@ -300,6 +333,8 @@ void I2C_ReadMpu6500Raw(void)
              I2C_FixedSign(gz_tenth_dps),
              (unsigned long)I2C_FixedWhole(gz_tenth_dps, 10),
              (unsigned long)I2C_FixedFraction(gz_tenth_dps, 10));
+#endif
+#if MPU6500_LOG_ACCEL_ANGLE
     LOG_INFO("MPU6500 angle accel: pitch=%s%lu.%01ludeg roll=%s%lu.%01ludeg",
              I2C_FixedSign(accel_pitch_tenth_deg),
              (unsigned long)I2C_FixedWhole(accel_pitch_tenth_deg, 10),
@@ -307,6 +342,8 @@ void I2C_ReadMpu6500Raw(void)
              I2C_FixedSign(accel_roll_tenth_deg),
              (unsigned long)I2C_FixedWhole(accel_roll_tenth_deg, 10),
              (unsigned long)I2C_FixedFraction(accel_roll_tenth_deg, 10));
+#endif
+#if MPU6500_LOG_FUSED_ANGLE
     LOG_INFO("MPU6500 angle fused: pitch=%s%lu.%01ludeg roll=%s%lu.%01ludeg",
              I2C_FixedSign(fused_pitch_tenth_deg),
              (unsigned long)I2C_FixedWhole(fused_pitch_tenth_deg, 10),
@@ -314,10 +351,13 @@ void I2C_ReadMpu6500Raw(void)
              I2C_FixedSign(fused_roll_tenth_deg),
              (unsigned long)I2C_FixedWhole(fused_roll_tenth_deg, 10),
              (unsigned long)I2C_FixedFraction(fused_roll_tenth_deg, 10));
+#endif
+#if MPU6500_LOG_FILTER_DEBUG
     LOG_INFO("MPU6500 filter: dt=%s%lu.%03lus alpha=0.95",
              I2C_FixedSign(filter_dt_millis),
              (unsigned long)I2C_FixedWhole(filter_dt_millis, 1000),
              (unsigned long)I2C_FixedFraction(filter_dt_millis, 1000));
+#endif
 }
 
 static void I2C_RunOledDisplayTest(uint8_t addr)
