@@ -3,6 +3,7 @@
 #include "bringup_log.h"
 
 #include "i2c.h"
+#include "ssd1306.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -11,6 +12,28 @@
 #define I2C1_SCL_PIN GPIO_PIN_8
 #define I2C1_SDA_GPIO_PORT GPIOB
 #define I2C1_SDA_PIN GPIO_PIN_9
+
+static void I2C_RunOledDisplayTest(uint8_t addr)
+{
+    if (SSD1306_Init(&hi2c1, addr) == false)
+    {
+        LOG_INFO("OLED SSD1306 init failed at 0x%02X.", addr);
+        return;
+    }
+
+    (void)SSD1306_Clear();
+    (void)SSD1306_WriteString(0U, 0U, "OLED OK");
+    (void)SSD1306_WriteString(0U, 2U, "I2C: 0x3C");
+
+    if (SSD1306_UpdateScreen() == true)
+    {
+        LOG_INFO("OLED display test written at 0x%02X.", addr);
+    }
+    else
+    {
+        LOG_INFO("OLED display update failed at 0x%02X.", addr);
+    }
+}
 
 void I2C_ScanBus(void)
 {
@@ -41,6 +64,11 @@ void I2C_ScanBus(void)
             {
                 LOG_INFO("OLED found at 0x%02X.", addr);
                 oled_found = true;
+
+                if (addr == SSD1306_I2C_ADDR_7BIT)
+                {
+                    I2C_RunOledDisplayTest(addr);
+                }
             }
 
             found_count++;
