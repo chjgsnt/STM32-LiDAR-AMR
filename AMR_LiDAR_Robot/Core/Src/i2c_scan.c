@@ -3,10 +3,12 @@
 #include "bringup_log.h"
 
 #include "i2c.h"
+#include "mpu6500.h"
 #include "ssd1306.h"
 
 #include <math.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #define I2C1_SCL_GPIO_PORT GPIOB
@@ -54,6 +56,52 @@ static uint32_t complementary_last_ms = 0U;
 static bool complementary_initialized = false;
 static float complementary_last_dt_s = 0.0f;
 static uint32_t mpu6500_last_log_ms = 0U;
+static MPU6500_Data_t mpu6500_data = {0};
+
+static void MPU6500_StoreData(const MPU6500_Data_t *data)
+{
+    uint32_t primask = __get_PRIMASK();
+
+    __disable_irq();
+    mpu6500_data = *data;
+
+    if (primask == 0U)
+    {
+        __enable_irq();
+    }
+}
+
+const MPU6500_Data_t *MPU6500_GetData(void)
+{
+    return &mpu6500_data;
+}
+
+bool MPU6500_GetLatest(MPU6500_Data_t *out)
+{
+    bool result = false;
+
+    if (out == NULL)
+    {
+        return false;
+    }
+
+    uint32_t primask = __get_PRIMASK();
+
+    __disable_irq();
+
+    if (mpu6500_data.is_ready != 0U)
+    {
+        *out = mpu6500_data;
+        result = true;
+    }
+
+    if (primask == 0U)
+    {
+        __enable_irq();
+    }
+
+    return result;
+}
 
 static int16_t I2C_CombineInt16(uint8_t high, uint8_t low)
 {
@@ -239,19 +287,9 @@ void I2C_ReadMpu6500Raw(void)
         return;
     }
 
-#if MPU6500_LOG_UNITS
-    int32_t ax_centi_g = I2C_ScaleRawRounded(ax, 100, 16384);
-    int32_t ay_centi_g = I2C_ScaleRawRounded(ay, 100, 16384);
-    int32_t az_centi_g = I2C_ScaleRawRounded(az, 100, 16384);
-#endif
+    float gz_dps = (float)((int32_t)gz - gyro_bias_z) / MPU6500_GYRO_LSB_PER_DPS;
     float gx_dps = (float)((int32_t)gx - gyro_bias_x) / MPU6500_GYRO_LSB_PER_DPS;
     float gy_dps = (float)((int32_t)gy - gyro_bias_y) / MPU6500_GYRO_LSB_PER_DPS;
-#if MPU6500_LOG_UNITS
-    float gz_dps = (float)((int32_t)gz - gyro_bias_z) / MPU6500_GYRO_LSB_PER_DPS;
-    int32_t gx_tenth_dps = I2C_ScaleFloatRounded(gx_dps, 10.0f);
-    int32_t gy_tenth_dps = I2C_ScaleFloatRounded(gy_dps, 10.0f);
-    int32_t gz_tenth_dps = I2C_ScaleFloatRounded(gz_dps, 10.0f);
-#endif
     float ax_g = (float)ax / MPU6500_ACCEL_LSB_PER_G;
     float ay_g = (float)ay / MPU6500_ACCEL_LSB_PER_G;
     float az_g = (float)az / MPU6500_ACCEL_LSB_PER_G;
@@ -285,6 +323,28 @@ void I2C_ReadMpu6500Raw(void)
                                  ((1.0f - MPU6500_COMPLEMENTARY_ALPHA) * accel_roll_deg);
     }
 
+    MPU6500_Data_t next_data = mpu6500_data;
+
+    next_data.ax_g = ax_g;
+    next_data.ay_g = ay_g;
+    next_data.az_g = az_g;
+    next_data.gx_dps = gx_dps;
+    next_data.gy_dps = gy_dps;
+    next_data.gz_dps = gz_dps;
+    next_data.accel_pitch_deg = accel_pitch_deg;
+    next_data.accel_roll_deg = accel_roll_deg;
+    next_data.fused_pitch_deg = complementary_pitch_deg;
+    next_data.fused_roll_deg = complementary_roll_deg;
+    next_data.last_update_ms = now_ms;
+    next_data.is_ready = 1U;
+    next_data.ax_raw = ax;
+    next_data.ay_raw = ay;
+    next_data.az_raw = az;
+    next_data.gx_raw = gx;
+    next_data.gy_raw = gy;
+    next_data.gz_raw = gz;
+    MPU6500_StoreData(&next_data);
+
     if (should_log == false)
     {
         return;
@@ -293,12 +353,12 @@ void I2C_ReadMpu6500Raw(void)
     mpu6500_last_log_ms = now_ms;
 
 #if MPU6500_LOG_ACCEL_ANGLE
-    int32_t accel_pitch_tenth_deg = I2C_ScaleFloatRounded(accel_pitch_deg, 10.0f);
-    int32_t accel_roll_tenth_deg = I2C_ScaleFloatRounded(accel_roll_deg, 10.0f);
+    int32_t accel_pitch_tenth_deg = I2C_ScaleFloatRounded(mpu6500_data.accel_pitch_deg, 10.0f);
+    int32_t accel_roll_tenth_deg = I2C_ScaleFloatRounded(mpu6500_data.accel_roll_deg, 10.0f);
 #endif
 #if MPU6500_LOG_FUSED_ANGLE
-    int32_t fused_pitch_tenth_deg = I2C_ScaleFloatRounded(complementary_pitch_deg, 10.0f);
-    int32_t fused_roll_tenth_deg = I2C_ScaleFloatRounded(complementary_roll_deg, 10.0f);
+    int32_t fused_pitch_tenth_deg = I2C_ScaleFloatRounded(mpu6500_data.fused_pitch_deg, 10.0f);
+    int32_t fused_roll_tenth_deg = I2C_ScaleFloatRounded(mpu6500_data.fused_roll_deg, 10.0f);
 #endif
 #if MPU6500_LOG_FILTER_DEBUG
     int32_t filter_dt_millis = I2C_ScaleFloatRounded(complementary_last_dt_s, 1000.0f);
@@ -306,14 +366,21 @@ void I2C_ReadMpu6500Raw(void)
 
 #if MPU6500_LOG_RAW
     LOG_INFO("MPU6500 raw: ax=%d, ay=%d, az=%d, gx=%d, gy=%d, gz=%d.",
-             (int)ax,
-             (int)ay,
-             (int)az,
-             (int)gx,
-             (int)gy,
-             (int)gz);
+             (int)mpu6500_data.ax_raw,
+             (int)mpu6500_data.ay_raw,
+             (int)mpu6500_data.az_raw,
+             (int)mpu6500_data.gx_raw,
+             (int)mpu6500_data.gy_raw,
+             (int)mpu6500_data.gz_raw);
 #endif
 #if MPU6500_LOG_UNITS
+    int32_t ax_centi_g = I2C_ScaleFloatRounded(mpu6500_data.ax_g, 100.0f);
+    int32_t ay_centi_g = I2C_ScaleFloatRounded(mpu6500_data.ay_g, 100.0f);
+    int32_t az_centi_g = I2C_ScaleFloatRounded(mpu6500_data.az_g, 100.0f);
+    int32_t gx_tenth_dps = I2C_ScaleFloatRounded(mpu6500_data.gx_dps, 10.0f);
+    int32_t gy_tenth_dps = I2C_ScaleFloatRounded(mpu6500_data.gy_dps, 10.0f);
+    int32_t gz_tenth_dps = I2C_ScaleFloatRounded(mpu6500_data.gz_dps, 10.0f);
+
     LOG_INFO("MPU6500: ax=%s%lu.%02lug ay=%s%lu.%02lug az=%s%lu.%02lug gx=%s%lu.%01ludps gy=%s%lu.%01ludps gz=%s%lu.%01ludps",
              I2C_FixedSign(ax_centi_g),
              (unsigned long)I2C_FixedWhole(ax_centi_g, 100),
