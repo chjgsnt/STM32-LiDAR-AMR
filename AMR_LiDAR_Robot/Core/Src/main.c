@@ -182,6 +182,23 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
+int _write(int file, char *ptr, int len)
+{
+  (void)file;
+
+  if (len <= 0)
+  {
+    return 0;
+  }
+
+  if (HAL_UART_Transmit(&huart2, (uint8_t *)ptr, (uint16_t)len, HAL_MAX_DELAY) != HAL_OK)
+  {
+    return 0;
+  }
+
+  return len;
+}
+
 int __io_putchar(int ch)
 {
   uint8_t tx_char = (uint8_t)ch;

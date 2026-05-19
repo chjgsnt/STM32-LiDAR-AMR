@@ -37,6 +37,17 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#ifndef LD2_Pin
+#define BRINGUP_LED_PIN GPIO_PIN_5
+#else
+#define BRINGUP_LED_PIN LD2_Pin
+#endif
+
+#ifndef LD2_GPIO_Port
+#define BRINGUP_LED_GPIO_PORT GPIOA
+#else
+#define BRINGUP_LED_GPIO_PORT LD2_GPIO_Port
+#endif
 
 /* USER CODE END PD */
 
@@ -166,7 +177,7 @@ void StartDefaultTask(void *argument)
   /* Infinite loop */
   for(;;)
   {
-    HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
+    HAL_GPIO_TogglePin(BRINGUP_LED_GPIO_PORT, BRINGUP_LED_PIN);
     osDelay(1000);
   }
   /* USER CODE END StartDefaultTask */
