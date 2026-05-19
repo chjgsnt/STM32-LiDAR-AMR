@@ -14,9 +14,11 @@
 - VSCode with STM32CubeIDE extension
 - STM32CubeCLT
 
-## Step 0 Goal
+## Current Status
 
-This step creates the baseline project file structure for later firmware, documentation, tools, and tests. It intentionally avoids complex driver logic, peripheral configuration, and application behavior.
+- Step 0 created the baseline project file structure for later firmware, documentation, tools, and tests.
+- Step 1 created the first STM32CubeMX configuration for core bring-up peripherals and middleware.
+- Step 2 is prepared as a minimal bring-up test plan for UART2 logging and I2C scanning.
 
 ## Planned Firmware Modules
 
@@ -57,4 +59,4 @@ Use the `Docs/` folders to keep project evidence organized:
 
 ## Next Step
 
-Step 1 should configure STM32CubeMX peripherals and middleware, especially UART, DMA, I2C, timers, encoder interfaces, PWM outputs, and FreeRTOS.
+Step 2 should verify the generated configuration on hardware with a USART2 debug log smoke test, an I2C1 scan, and a basic USART1 RX DMA receive-buffer check.
