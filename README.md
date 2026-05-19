@@ -18,7 +18,9 @@
 
 - Step 0 created the baseline project file structure for later firmware, documentation, tools, and tests.
 - Step 1 created the first STM32CubeMX configuration for core bring-up peripherals and middleware.
-- Step 2 is prepared as a minimal bring-up test plan for UART2 logging and I2C scanning.
+- Step 2 verified the generated configuration on hardware with USART2 logging, FreeRTOS startup, I2C1 scanning, and basic I2C module bring-up.
+- MPU6500 IMU bring-up is verified on I2C1 at address `0x68`: `WHO_AM_I = 0x70`, raw accelerometer/gyroscope data, `g` / `dps` conversion, gyro bias calibration, pitch/roll, complementary-filter fused pitch/roll, and App-layer readout are working.
+- The current default hardware validation setup connects the MPU6500 only; the OLED is not connected.
 
 ## Planned Firmware Modules
 
@@ -38,6 +40,7 @@
 
 Use the `Docs/` folders to keep project evidence organized:
 
+- `Docs/01_Module_Test/`: module bring-up notes, including MPU6500 IMU validation
 - `Docs/02_Debug_Logs/`: serial logs and runtime traces
 - `Docs/03_OLED_Photos/`: OLED display photos during tests
 - `Docs/04_Logic_Analyzer/`: UART, I2C, PWM, and encoder captures
@@ -59,4 +62,4 @@ Use the `Docs/` folders to keep project evidence organized:
 
 ## Next Step
 
-Step 2 should verify the generated configuration on hardware with a USART2 debug log smoke test, an I2C1 scan, and a basic USART1 RX DMA receive-buffer check.
+Continue from the verified IMU path by recording serial evidence as needed, then proceed to the next hardware module such as USART1 LiDAR RX DMA / packet parsing or motor-driver bring-up.
