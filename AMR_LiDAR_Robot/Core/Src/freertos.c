@@ -49,6 +49,8 @@
 #define BRINGUP_LED_GPIO_PORT LD2_GPIO_Port
 #endif
 
+#define IMU_SAMPLE_PERIOD_MS 10U
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -184,13 +186,13 @@ void StartDefaultTask(void *argument)
     I2C_ReadMpu6500Raw();
 
     led_tick++;
-    if (led_tick >= 2U)
+    if (led_tick >= (1000U / IMU_SAMPLE_PERIOD_MS))
     {
       HAL_GPIO_TogglePin(BRINGUP_LED_GPIO_PORT, BRINGUP_LED_PIN);
       led_tick = 0U;
     }
 
-    osDelay(500);
+    osDelay(IMU_SAMPLE_PERIOD_MS);
   }
   /* USER CODE END StartDefaultTask */
 }
