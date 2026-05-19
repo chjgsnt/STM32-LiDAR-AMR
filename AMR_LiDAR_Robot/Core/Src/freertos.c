@@ -27,6 +27,7 @@
 /* USER CODE BEGIN Includes */
 #include "bringup_log.h"
 #include "i2c_scan.h"
+#include "mpu6500.h"
 
 /* USER CODE END Includes */
 
@@ -50,6 +51,7 @@
 #endif
 
 #define IMU_SAMPLE_PERIOD_MS 10U
+#define APP_IMU_LOG_INTERVAL_MS 1000U
 
 /* USER CODE END PD */
 
@@ -100,6 +102,11 @@ const osThreadAttr_t controlTask_attributes = {
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
+static int32_t App_ScaleFloatRounded(float value, float multiplier);
+static const char *App_FixedSign(int32_t value);
+static uint32_t App_FixedWhole(int32_t value, int32_t decimal_scale);
+static uint32_t App_FixedFraction(int32_t value, int32_t decimal_scale);
+static void App_LogImuStatus(void);
 
 /* USER CODE END FunctionPrototypes */
 
@@ -184,6 +191,7 @@ void StartDefaultTask(void *argument)
   for(;;)
   {
     I2C_ReadMpu6500Raw();
+    App_LogImuStatus();
 
     led_tick++;
     if (led_tick >= (1000U / IMU_SAMPLE_PERIOD_MS))
@@ -271,6 +279,67 @@ void StartTask05(void *argument)
 
 /* Private application code --------------------------------------------------*/
 /* USER CODE BEGIN Application */
+static int32_t App_ScaleFloatRounded(float value, float multiplier)
+{
+  float scaled = value * multiplier;
+
+  if (scaled < 0.0f)
+  {
+    return (int32_t)(scaled - 0.5f);
+  }
+
+  return (int32_t)(scaled + 0.5f);
+}
+
+static const char *App_FixedSign(int32_t value)
+{
+  return (value < 0) ? "-" : "";
+}
+
+static uint32_t App_FixedWhole(int32_t value, int32_t decimal_scale)
+{
+  int32_t abs_value = (value < 0) ? -value : value;
+  return (uint32_t)(abs_value / decimal_scale);
+}
+
+static uint32_t App_FixedFraction(int32_t value, int32_t decimal_scale)
+{
+  int32_t abs_value = (value < 0) ? -value : value;
+  return (uint32_t)(abs_value % decimal_scale);
+}
+
+static void App_LogImuStatus(void)
+{
+  static uint32_t last_log_ms = 0U;
+  uint32_t now_ms = HAL_GetTick();
+
+  if ((now_ms - last_log_ms) < APP_IMU_LOG_INTERVAL_MS)
+  {
+    return;
+  }
+
+  last_log_ms = now_ms;
+
+  MPU6500_Data_t imu;
+
+  if (MPU6500_GetLatest(&imu) == false)
+  {
+    LOG_INFO("APP IMU: ready=0");
+    return;
+  }
+
+  int32_t pitch_tenth_deg = App_ScaleFloatRounded(imu.fused_pitch_deg, 10.0f);
+  int32_t roll_tenth_deg = App_ScaleFloatRounded(imu.fused_roll_deg, 10.0f);
+
+  LOG_INFO("APP IMU: ready=%u pitch=%s%lu.%01ludeg roll=%s%lu.%01ludeg",
+           (unsigned int)imu.is_ready,
+           App_FixedSign(pitch_tenth_deg),
+           (unsigned long)App_FixedWhole(pitch_tenth_deg, 10),
+           (unsigned long)App_FixedFraction(pitch_tenth_deg, 10),
+           App_FixedSign(roll_tenth_deg),
+           (unsigned long)App_FixedWhole(roll_tenth_deg, 10),
+           (unsigned long)App_FixedFraction(roll_tenth_deg, 10));
+}
 
 /* USER CODE END Application */
 
