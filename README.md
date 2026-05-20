@@ -22,9 +22,10 @@
 - MPU6500 IMU bring-up is verified on I2C1 at address `0x68`: `WHO_AM_I = 0x70`, raw accelerometer/gyroscope data, `g` / `dps` conversion, gyro bias calibration, pitch/roll, complementary-filter fused pitch/roll, and App-layer readout are working.
 - Step 3 verified the AT8236 motor driver path, Motor A/B PWM forward/reverse output, and TIM2/TIM4 encoder counting.
 - Step 4 Chassis Open-Loop Test is complete. The chassis open-loop path has been verified with `MPU6500 IMU ready=1`, AT8236 motor driver output, Motor A/B PWM forward/reverse, TIM2/TIM4 encoder counting, and chassis `Forward`, `Backward`, `TurnLeft`, and `TurnRight` actions.
+- Step 5 Encoder Speed Balance Test is complete. With `base_duty=500`, `CHASSIS_LEFT_TRIM=-10`, and `CHASSIS_RIGHT_TRIM=10`, P-only balance reduces left/right wheel speed difference. During the second half of forward motion, `err` can usually be reduced to about `+/-10 ticks/sample`. Backward motion can run, but `err` fluctuates slightly more and will be optimized in the later PID stage. `MPU6500 IMU ready=1` remained valid during the test.
 - Final chassis direction configuration: `CHASSIS_LEFT_SIGN = -1`, `CHASSIS_RIGHT_SIGN = 1`.
-- Current ground open-loop test duty: `500`.
-- Known limitation: open-loop forward/backward motion is not straight enough; the next control step is encoder speed balance / speed PID.
+- Current speed balance test duty: `500`.
+- Current known issue: UART logs may interleave when IMU and BALANCE logs print at the same time.
 
 ## Planned Firmware Modules
 
@@ -67,4 +68,4 @@ Use the `Docs/` folders to keep project evidence organized:
 
 ## Next Step
 
-Proceed to Step5 Encoder Speed Balance Test: use encoder feedback to balance left/right wheel speed, then move toward closed-loop speed PID for straighter forward/backward motion.
+Proceed to closed-loop wheel speed PID, or clean up UART logging with a log mutex / serialized logging path.

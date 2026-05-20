@@ -29,10 +29,10 @@
 #include "i2c.h"
 #include "i2c_scan.h"
 #include "mpu6500.h"
-#if APP_ENABLE_CHASSIS_OPENLOOP_TEST || APP_ENABLE_CHASSIS_DIRECTION_CAL_TEST || APP_ENABLE_CHASSIS_GROUND_TRACTION_TEST
+#if APP_ENABLE_CHASSIS_OPENLOOP_TEST || APP_ENABLE_CHASSIS_DIRECTION_CAL_TEST || APP_ENABLE_CHASSIS_GROUND_TRACTION_TEST || APP_ENABLE_CHASSIS_SPEED_BALANCE_TEST
 #include "chassis.h"
 #endif
-#if (APP_ENABLE_MOTOR_TEST && !APP_ENABLE_MOTOR_GPIO_STATIC_TEST) || APP_ENABLE_CHASSIS_OPENLOOP_TEST || APP_ENABLE_CHASSIS_DIRECTION_CAL_TEST || APP_ENABLE_CHASSIS_GROUND_TRACTION_TEST
+#if (APP_ENABLE_MOTOR_TEST && !APP_ENABLE_MOTOR_GPIO_STATIC_TEST) || APP_ENABLE_CHASSIS_OPENLOOP_TEST || APP_ENABLE_CHASSIS_DIRECTION_CAL_TEST || APP_ENABLE_CHASSIS_GROUND_TRACTION_TEST || APP_ENABLE_CHASSIS_SPEED_BALANCE_TEST
 #include "motor_driver.h"
 #endif
 #if APP_ENABLE_MOTOR_TEST && !APP_ENABLE_MOTOR_GPIO_STATIC_TEST
@@ -89,6 +89,21 @@ typedef void (*App_ChassisCommand_t)(int16_t duty);
 #define CHASSIS_GROUND_BETWEEN_STOP_MS 1000U
 #define CHASSIS_GROUND_RUN_MS 1500U
 #define CHASSIS_GROUND_LOG_PERIOD_MS 500U
+#define CHASSIS_BALANCE_BASE_DUTY CHASSIS_GROUND_TEST_DUTY
+#define CHASSIS_BALANCE_INITIAL_STOP_MS 2000U
+#define CHASSIS_BALANCE_BETWEEN_STOP_MS 2000U
+#define CHASSIS_BALANCE_RUN_MS 5000U
+#define CHASSIS_BALANCE_LOG_PERIOD_MS 200U
+#define CHASSIS_BALANCE_KP 1
+#ifndef CHASSIS_LEFT_TRIM
+#define CHASSIS_LEFT_TRIM (-10)
+#endif
+#ifndef CHASSIS_RIGHT_TRIM
+#define CHASSIS_RIGHT_TRIM 10
+#endif
+#define CHASSIS_BALANCE_CORRECTION_LIMIT 100
+#define CHASSIS_BALANCE_DUTY_MIN 300
+#define CHASSIS_BALANCE_DUTY_MAX CHASSIS_MAX_OPENLOOP_DUTY
 #define I2C_BASELINE_SCL_GPIO_PORT GPIOB
 #define I2C_BASELINE_SCL_PIN GPIO_PIN_8
 #define I2C_BASELINE_SDA_GPIO_PORT GPIOB
@@ -183,6 +198,23 @@ static void App_LogChassisGroundTractionStatus(int16_t duty,
                                                int32_t enc_b,
                                                int32_t delta_a,
                                                int32_t delta_b);
+#endif
+#if APP_ENABLE_CHASSIS_SPEED_BALANCE_TEST
+static void App_RunChassisSpeedBalanceTest(void);
+static void App_RunChassisSpeedBalancePhase(const char *direction_name,
+                                            int8_t direction,
+                                            int16_t base_duty);
+static int32_t App_AbsI32(int32_t value);
+static int16_t App_LimitInt16(int32_t value, int16_t min_value, int16_t max_value);
+static void App_LogChassisSpeedBalanceStatus(const char *direction_name,
+                                             int16_t base_duty,
+                                             int16_t left_duty,
+                                             int16_t right_duty,
+                                             int32_t enc_a,
+                                             int32_t enc_b,
+                                             int32_t delta_a,
+                                             int32_t delta_b,
+                                             int32_t err);
 #endif
 #if APP_ENABLE_MOTOR_GPIO_STATIC_TEST
 static void App_RunMotorGpioStaticTest(void);
@@ -372,6 +404,8 @@ void StartTask05(void *argument)
   App_RunChassisDirectionCalTest();
 #elif APP_ENABLE_CHASSIS_GROUND_TRACTION_TEST
   App_RunChassisGroundTractionTest();
+#elif APP_ENABLE_CHASSIS_SPEED_BALANCE_TEST
+  App_RunChassisSpeedBalanceTest();
 #endif
 
   /* Infinite loop */
@@ -798,6 +832,135 @@ static void App_LogChassisGroundTractionStatus(int16_t duty,
          (long)enc_b,
          (long)delta_a,
          (long)delta_b);
+}
+#endif
+
+#if APP_ENABLE_CHASSIS_SPEED_BALANCE_TEST
+static void App_RunChassisSpeedBalanceTest(void)
+{
+  printf("[BALANCE] speed balance test start\r\n");
+
+  Chassis_Init();
+  Chassis_Stop();
+  osDelay(CHASSIS_BALANCE_INITIAL_STOP_MS);
+
+  MotorDriver_ResetEncoders();
+  App_RunChassisSpeedBalancePhase("forward", 1, CHASSIS_BALANCE_BASE_DUTY);
+  Chassis_Stop();
+  osDelay(CHASSIS_BALANCE_BETWEEN_STOP_MS);
+
+  MotorDriver_ResetEncoders();
+  App_RunChassisSpeedBalancePhase("backward", -1, CHASSIS_BALANCE_BASE_DUTY);
+  Chassis_Stop();
+
+  printf("[BALANCE] speed balance test done\r\n");
+}
+
+static void App_RunChassisSpeedBalancePhase(const char *direction_name,
+                                            int8_t direction,
+                                            int16_t base_duty)
+{
+  int32_t previous_enc_a = MotorDriver_GetEncoderA();
+  int32_t previous_enc_b = MotorDriver_GetEncoderB();
+  int32_t left_target = (int32_t)base_duty + CHASSIS_LEFT_TRIM;
+  int32_t right_target = (int32_t)base_duty + CHASSIS_RIGHT_TRIM;
+  int16_t left_mag = App_LimitInt16(left_target, CHASSIS_BALANCE_DUTY_MIN, CHASSIS_BALANCE_DUTY_MAX);
+  int16_t right_mag = App_LimitInt16(right_target, CHASSIS_BALANCE_DUTY_MIN, CHASSIS_BALANCE_DUTY_MAX);
+  int16_t left_cmd = (direction > 0) ? left_mag : (int16_t)-left_mag;
+  int16_t right_cmd = (direction > 0) ? right_mag : (int16_t)-right_mag;
+
+  Chassis_SetRaw(left_cmd, right_cmd);
+
+  for (uint32_t elapsed_ms = 0U;
+       elapsed_ms < CHASSIS_BALANCE_RUN_MS;
+       elapsed_ms += CHASSIS_BALANCE_LOG_PERIOD_MS)
+  {
+    osDelay(CHASSIS_BALANCE_LOG_PERIOD_MS);
+
+    int32_t enc_a = MotorDriver_GetEncoderA();
+    int32_t enc_b = MotorDriver_GetEncoderB();
+    int32_t delta_a = enc_a - previous_enc_a;
+    int32_t delta_b = enc_b - previous_enc_b;
+    int32_t speed_left = App_AbsI32(delta_a);
+    int32_t speed_right = App_AbsI32(delta_b);
+    int32_t err = speed_left - speed_right;
+    int16_t correction = App_LimitInt16((int32_t)CHASSIS_BALANCE_KP * err,
+                                        -CHASSIS_BALANCE_CORRECTION_LIMIT,
+                                        CHASSIS_BALANCE_CORRECTION_LIMIT);
+    left_target = (int32_t)base_duty - correction;
+    right_target = (int32_t)base_duty + correction;
+    left_target += CHASSIS_LEFT_TRIM;
+    right_target += CHASSIS_RIGHT_TRIM;
+
+    left_mag = App_LimitInt16(left_target, CHASSIS_BALANCE_DUTY_MIN, CHASSIS_BALANCE_DUTY_MAX);
+    right_mag = App_LimitInt16(right_target, CHASSIS_BALANCE_DUTY_MIN, CHASSIS_BALANCE_DUTY_MAX);
+
+    left_cmd = (direction > 0) ? left_mag : (int16_t)-left_mag;
+    right_cmd = (direction > 0) ? right_mag : (int16_t)-right_mag;
+    Chassis_SetRaw(left_cmd, right_cmd);
+
+    App_LogChassisSpeedBalanceStatus(direction_name,
+                                     base_duty,
+                                     left_cmd,
+                                     right_cmd,
+                                     enc_a,
+                                     enc_b,
+                                     delta_a,
+                                     delta_b,
+                                     err);
+
+    previous_enc_a = enc_a;
+    previous_enc_b = enc_b;
+  }
+}
+
+static int32_t App_AbsI32(int32_t value)
+{
+  return (value < 0) ? -value : value;
+}
+
+static int16_t App_LimitInt16(int32_t value, int16_t min_value, int16_t max_value)
+{
+  if (value < min_value)
+  {
+    return min_value;
+  }
+
+  if (value > max_value)
+  {
+    return max_value;
+  }
+
+  return (int16_t)value;
+}
+
+static void App_LogChassisSpeedBalanceStatus(const char *direction_name,
+                                             int16_t base_duty,
+                                             int16_t left_duty,
+                                             int16_t right_duty,
+                                             int32_t enc_a,
+                                             int32_t enc_b,
+                                             int32_t delta_a,
+                                             int32_t delta_b,
+                                             int32_t err)
+{
+  char log_line[192];
+
+  (void)snprintf(log_line,
+                 sizeof(log_line),
+                 "[BALANCE] dir=%s base=%d left_trim=%d right_trim=%d left_duty=%d right_duty=%d encA=%ld encB=%ld dA=%ld dB=%ld err=%ld\r\n",
+                 direction_name,
+                 (int)base_duty,
+                 (int)CHASSIS_LEFT_TRIM,
+                 (int)CHASSIS_RIGHT_TRIM,
+                 (int)left_duty,
+                 (int)right_duty,
+                 (long)enc_a,
+                 (long)enc_b,
+                 (long)delta_a,
+                 (long)delta_b,
+                 (long)err);
+  printf("%s", log_line);
 }
 #endif
 
