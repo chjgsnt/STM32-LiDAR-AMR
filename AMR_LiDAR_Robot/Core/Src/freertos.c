@@ -29,8 +29,13 @@
 #include "i2c.h"
 #include "i2c_scan.h"
 #include "mpu6500.h"
-#if APP_ENABLE_MOTOR_TEST && !APP_ENABLE_MOTOR_GPIO_STATIC_TEST
+#if APP_ENABLE_CHASSIS_OPENLOOP_TEST || APP_ENABLE_CHASSIS_DIRECTION_CAL_TEST || APP_ENABLE_CHASSIS_GROUND_TRACTION_TEST
+#include "chassis.h"
+#endif
+#if (APP_ENABLE_MOTOR_TEST && !APP_ENABLE_MOTOR_GPIO_STATIC_TEST) || APP_ENABLE_CHASSIS_OPENLOOP_TEST || APP_ENABLE_CHASSIS_DIRECTION_CAL_TEST || APP_ENABLE_CHASSIS_GROUND_TRACTION_TEST
 #include "motor_driver.h"
+#endif
+#if APP_ENABLE_MOTOR_TEST && !APP_ENABLE_MOTOR_GPIO_STATIC_TEST
 #include "tim.h"
 #endif
 
@@ -38,6 +43,9 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
+#if APP_ENABLE_CHASSIS_OPENLOOP_TEST
+typedef void (*App_ChassisCommand_t)(int16_t duty);
+#endif
 
 /* USER CODE END PTD */
 
@@ -63,6 +71,24 @@
 #define MOTOR_TEST_RUN_MS 4000U
 #define MOTOR_TEST_LOG_PERIOD_MS 500U
 #define MOTOR_GPIO_STATIC_HOLD_MS 3000U
+/*
+ * 300 is suitable for lifted-wheel direction verification.
+ * 500 is selected for ground open-loop traction test.
+ */
+#define CHASSIS_TEST_DUTY CHASSIS_GROUND_TEST_DUTY
+#define CHASSIS_TEST_INITIAL_STOP_MS 2000U
+#define CHASSIS_TEST_BETWEEN_STOP_MS 1000U
+#define CHASSIS_TEST_RUN_MS 3000U
+#define CHASSIS_TEST_LOG_PERIOD_MS 500U
+#define CHASSIS_CAL_DUTY 300
+#define CHASSIS_CAL_INITIAL_STOP_MS 2000U
+#define CHASSIS_CAL_BETWEEN_STOP_MS 1000U
+#define CHASSIS_CAL_RUN_MS 3000U
+#define CHASSIS_CAL_LOG_PERIOD_MS 500U
+#define CHASSIS_GROUND_INITIAL_STOP_MS 2000U
+#define CHASSIS_GROUND_BETWEEN_STOP_MS 1000U
+#define CHASSIS_GROUND_RUN_MS 1500U
+#define CHASSIS_GROUND_LOG_PERIOD_MS 500U
 #define I2C_BASELINE_SCL_GPIO_PORT GPIOB
 #define I2C_BASELINE_SCL_PIN GPIO_PIN_8
 #define I2C_BASELINE_SDA_GPIO_PORT GPIOB
@@ -134,6 +160,29 @@ static void App_RunMotorBringupTest(void);
 static void App_RunMotorPhase(const char *phase, int16_t duty, uint8_t motor_index);
 static void App_LogMotorPwmStatus(const char *phase, int16_t duty);
 static uint32_t App_GetMaxTim3Ccr(void);
+#endif
+#if APP_ENABLE_CHASSIS_OPENLOOP_TEST
+static void App_RunChassisOpenLoopTest(void);
+static void App_RunChassisPhase(const char *action,
+                                int16_t duty,
+                                int16_t left_duty,
+                                int16_t right_duty,
+                                App_ChassisCommand_t command);
+static void App_LogChassisStatus(const char *action, int16_t left_duty, int16_t right_duty);
+#endif
+#if APP_ENABLE_CHASSIS_DIRECTION_CAL_TEST
+static void App_RunChassisDirectionCalTest(void);
+static void App_RunChassisDirectionCalPhase(const char *action, int16_t left_duty, int16_t right_duty);
+static void App_LogChassisDirectionCalStatus(const char *action, int16_t left_duty, int16_t right_duty);
+#endif
+#if APP_ENABLE_CHASSIS_GROUND_TRACTION_TEST
+static void App_RunChassisGroundTractionTest(void);
+static void App_RunChassisGroundTractionPhase(int16_t duty);
+static void App_LogChassisGroundTractionStatus(int16_t duty,
+                                               int32_t enc_a,
+                                               int32_t enc_b,
+                                               int32_t delta_a,
+                                               int32_t delta_b);
 #endif
 #if APP_ENABLE_MOTOR_GPIO_STATIC_TEST
 static void App_RunMotorGpioStaticTest(void);
@@ -317,6 +366,12 @@ void StartTask05(void *argument)
   App_RunMotorGpioStaticTest();
 #elif APP_ENABLE_MOTOR_TEST
   App_RunMotorBringupTest();
+#elif APP_ENABLE_CHASSIS_OPENLOOP_TEST
+  App_RunChassisOpenLoopTest();
+#elif APP_ENABLE_CHASSIS_DIRECTION_CAL_TEST
+  App_RunChassisDirectionCalTest();
+#elif APP_ENABLE_CHASSIS_GROUND_TRACTION_TEST
+  App_RunChassisGroundTractionTest();
 #endif
 
   /* Infinite loop */
@@ -552,6 +607,197 @@ static uint32_t App_GetMaxTim3Ccr(void)
   }
 
   return max_ccr;
+}
+#endif
+
+#if APP_ENABLE_CHASSIS_OPENLOOP_TEST
+static void App_RunChassisOpenLoopTest(void)
+{
+  printf("[CHASSIS] open-loop test start\r\n");
+
+  Chassis_Init();
+  Chassis_Stop();
+  osDelay(CHASSIS_TEST_INITIAL_STOP_MS);
+
+  App_RunChassisPhase("Forward",
+                      CHASSIS_TEST_DUTY,
+                      CHASSIS_TEST_DUTY,
+                      CHASSIS_TEST_DUTY,
+                      Chassis_Forward);
+  Chassis_Stop();
+  osDelay(CHASSIS_TEST_BETWEEN_STOP_MS);
+
+  App_RunChassisPhase("Backward",
+                      CHASSIS_TEST_DUTY,
+                      -CHASSIS_TEST_DUTY,
+                      -CHASSIS_TEST_DUTY,
+                      Chassis_Backward);
+  Chassis_Stop();
+  osDelay(CHASSIS_TEST_BETWEEN_STOP_MS);
+
+  App_RunChassisPhase("TurnLeft",
+                      CHASSIS_TEST_DUTY,
+                      -CHASSIS_TEST_DUTY,
+                      CHASSIS_TEST_DUTY,
+                      Chassis_TurnLeft);
+  Chassis_Stop();
+  osDelay(CHASSIS_TEST_BETWEEN_STOP_MS);
+
+  App_RunChassisPhase("TurnRight",
+                      CHASSIS_TEST_DUTY,
+                      CHASSIS_TEST_DUTY,
+                      -CHASSIS_TEST_DUTY,
+                      Chassis_TurnRight);
+  Chassis_Stop();
+
+  printf("[CHASSIS] open-loop test done\r\n");
+}
+
+static void App_RunChassisPhase(const char *action,
+                                int16_t duty,
+                                int16_t left_duty,
+                                int16_t right_duty,
+                                App_ChassisCommand_t command)
+{
+  MotorDriver_ResetEncoders();
+  command(duty);
+
+  for (uint32_t elapsed_ms = 0U;
+       elapsed_ms < CHASSIS_TEST_RUN_MS;
+       elapsed_ms += CHASSIS_TEST_LOG_PERIOD_MS)
+  {
+    osDelay(CHASSIS_TEST_LOG_PERIOD_MS);
+    App_LogChassisStatus(action, left_duty, right_duty);
+  }
+}
+
+static void App_LogChassisStatus(const char *action, int16_t left_duty, int16_t right_duty)
+{
+  printf("[CHASSIS] action=%s left_duty=%d right_duty=%d encA=%ld encB=%ld\r\n",
+         action,
+         (int)left_duty,
+         (int)right_duty,
+         (long)MotorDriver_GetEncoderA(),
+         (long)MotorDriver_GetEncoderB());
+}
+#endif
+
+#if APP_ENABLE_CHASSIS_DIRECTION_CAL_TEST
+static void App_RunChassisDirectionCalTest(void)
+{
+  Chassis_Init();
+  Chassis_Stop();
+  osDelay(CHASSIS_CAL_INITIAL_STOP_MS);
+
+  App_RunChassisDirectionCalPhase("Left+300", CHASSIS_CAL_DUTY, 0);
+  Chassis_Stop();
+  osDelay(CHASSIS_CAL_BETWEEN_STOP_MS);
+
+  App_RunChassisDirectionCalPhase("Left-300", -CHASSIS_CAL_DUTY, 0);
+  Chassis_Stop();
+  osDelay(CHASSIS_CAL_BETWEEN_STOP_MS);
+
+  App_RunChassisDirectionCalPhase("Right+300", 0, CHASSIS_CAL_DUTY);
+  Chassis_Stop();
+  osDelay(CHASSIS_CAL_BETWEEN_STOP_MS);
+
+  App_RunChassisDirectionCalPhase("Right-300", 0, -CHASSIS_CAL_DUTY);
+  Chassis_Stop();
+
+  printf("[CHASSIS_CAL] done\r\n");
+}
+
+static void App_RunChassisDirectionCalPhase(const char *action, int16_t left_duty, int16_t right_duty)
+{
+  MotorDriver_ResetEncoders();
+  Chassis_SetRaw(left_duty, right_duty);
+
+  for (uint32_t elapsed_ms = 0U;
+       elapsed_ms < CHASSIS_CAL_RUN_MS;
+       elapsed_ms += CHASSIS_CAL_LOG_PERIOD_MS)
+  {
+    osDelay(CHASSIS_CAL_LOG_PERIOD_MS);
+    App_LogChassisDirectionCalStatus(action, left_duty, right_duty);
+  }
+}
+
+static void App_LogChassisDirectionCalStatus(const char *action, int16_t left_duty, int16_t right_duty)
+{
+  printf("[CHASSIS_CAL] action=%s left_duty=%d right_duty=%d encA=%ld encB=%ld\r\n",
+         action,
+         (int)left_duty,
+         (int)right_duty,
+         (long)MotorDriver_GetEncoderA(),
+         (long)MotorDriver_GetEncoderB());
+}
+#endif
+
+#if APP_ENABLE_CHASSIS_GROUND_TRACTION_TEST
+static void App_RunChassisGroundTractionTest(void)
+{
+  printf("[CHASSIS_GROUND] traction test start\r\n");
+
+  Chassis_Init();
+  Chassis_Stop();
+  osDelay(CHASSIS_GROUND_INITIAL_STOP_MS);
+
+  App_RunChassisGroundTractionPhase(CHASSIS_AIR_TEST_DUTY);
+  Chassis_Stop();
+  osDelay(CHASSIS_GROUND_BETWEEN_STOP_MS);
+
+  App_RunChassisGroundTractionPhase(400);
+  Chassis_Stop();
+  osDelay(CHASSIS_GROUND_BETWEEN_STOP_MS);
+
+  App_RunChassisGroundTractionPhase(CHASSIS_GROUND_TEST_DUTY);
+  Chassis_Stop();
+  osDelay(CHASSIS_GROUND_BETWEEN_STOP_MS);
+
+  App_RunChassisGroundTractionPhase(CHASSIS_MAX_OPENLOOP_DUTY);
+  Chassis_Stop();
+
+  printf("[CHASSIS_GROUND] traction test done\r\n");
+}
+
+static void App_RunChassisGroundTractionPhase(int16_t duty)
+{
+  MotorDriver_ResetEncoders();
+
+  int32_t previous_enc_a = MotorDriver_GetEncoderA();
+  int32_t previous_enc_b = MotorDriver_GetEncoderB();
+
+  Chassis_Forward(duty);
+
+  for (uint32_t elapsed_ms = 0U;
+       elapsed_ms < CHASSIS_GROUND_RUN_MS;
+       elapsed_ms += CHASSIS_GROUND_LOG_PERIOD_MS)
+  {
+    osDelay(CHASSIS_GROUND_LOG_PERIOD_MS);
+
+    int32_t enc_a = MotorDriver_GetEncoderA();
+    int32_t enc_b = MotorDriver_GetEncoderB();
+    int32_t delta_a = enc_a - previous_enc_a;
+    int32_t delta_b = enc_b - previous_enc_b;
+
+    App_LogChassisGroundTractionStatus(duty, enc_a, enc_b, delta_a, delta_b);
+
+    previous_enc_a = enc_a;
+    previous_enc_b = enc_b;
+  }
+}
+
+static void App_LogChassisGroundTractionStatus(int16_t duty,
+                                               int32_t enc_a,
+                                               int32_t enc_b,
+                                               int32_t delta_a,
+                                               int32_t delta_b)
+{
+  printf("[CHASSIS_GROUND] duty=%d encA=%ld encB=%ld deltaA=%ld deltaB=%ld\r\n",
+         (int)duty,
+         (long)enc_a,
+         (long)enc_b,
+         (long)delta_a,
+         (long)delta_b);
 }
 #endif
 
