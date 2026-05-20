@@ -10,6 +10,7 @@ Last updated: 2026-05-20
 - Step 3: AT8236 motor driver, Motor A/B PWM forward/reverse, and TIM2/TIM4 encoder counting verified.
 - Step 4: Chassis open-loop test completed.
 - Step 5: Encoder speed balance test completed.
+- Step 6: Wheel speed PI closed-loop test completed.
 
 ## Step4 Chassis Open-Loop Test
 
@@ -104,3 +105,40 @@ CHASSIS_RIGHT_SIGN = 1
 - Add closed-loop wheel speed PID for more stable forward/backward motion.
 - Continue optimizing backward speed balance in the PID stage.
 - Optionally add a log mutex or serialized logging path to avoid interleaved UART messages.
+
+## Step6 Wheel Speed PI Closed-Loop Test
+
+### Test Objective
+
+- Verify independent PI speed control for the left and right wheels.
+- Use encoder delta magnitude as wheel speed feedback.
+- Confirm Forward PI and Backward PI can complete with the chassis on the ground.
+- Confirm the MPU6500 IMU and I2C baseline remain healthy during the PI test.
+
+### Key Implementation
+
+- Used `target_ticks_per_sample=800`.
+- Used `feedforward_duty=500`.
+- Limited PI output duty magnitude to `300..600`.
+- Ran each direction with a `200 ms` control period.
+- Calculated speed feedback from `abs(deltaA)` and `abs(deltaB)`.
+
+### Test Results
+
+- Wheel speed PI closed-loop test passed.
+- Forward PI and Backward PI both ran to completion.
+- During startup, duty briefly reached the upper limit `600`.
+- After the startup transient, duty stabilized at about `470..500`.
+- In the later part of both forward and backward runs, encoder deltas were mostly stable at about `810..830 ticks/sample`, close to `target=800`.
+- `APP IMU: ready=1` remained valid during the PI test.
+- I2C baseline remained normal: `SCL=1`, `SDA=1`.
+
+### Known Limitations
+
+- Actual wheel speed is still slightly higher than the target; later tuning can reduce `feedforward_duty` or `Ki`.
+- UART logs may occasionally interleave with IMU logs; a log mutex can be added later.
+
+### Next Stage Plan
+
+- Tune PI parameters for tighter speed tracking.
+- Or add IMU yaw heading hold above the wheel speed PI layer.

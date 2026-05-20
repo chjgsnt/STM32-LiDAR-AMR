@@ -52,6 +52,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/i2c_scan.c
     Core/Src/motor_driver.c
     Core/Src/ssd1306.c
+    Core/Src/wheel_speed_controller.c
 )
 
 # Add include paths

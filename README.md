@@ -23,9 +23,10 @@
 - Step 3 verified the AT8236 motor driver path, Motor A/B PWM forward/reverse output, and TIM2/TIM4 encoder counting.
 - Step 4 Chassis Open-Loop Test is complete. The chassis open-loop path has been verified with `MPU6500 IMU ready=1`, AT8236 motor driver output, Motor A/B PWM forward/reverse, TIM2/TIM4 encoder counting, and chassis `Forward`, `Backward`, `TurnLeft`, and `TurnRight` actions.
 - Step 5 Encoder Speed Balance Test is complete. With `base_duty=500`, `CHASSIS_LEFT_TRIM=-10`, and `CHASSIS_RIGHT_TRIM=10`, P-only balance reduces left/right wheel speed difference. During the second half of forward motion, `err` can usually be reduced to about `+/-10 ticks/sample`. Backward motion can run, but `err` fluctuates slightly more and will be optimized in the later PID stage. `MPU6500 IMU ready=1` remained valid during the test.
+- Step 6 Wheel Speed PI Closed-Loop Test is complete. With `target_ticks_per_sample=800`, `feedforward_duty=500`, and duty limited to `300..600`, both Forward PI and Backward PI ran to completion. Startup duty briefly reached `600`, then stabilized around `470..500`; later encoder deltas were mostly `810..830 ticks/sample`, close to the `800` target. `MPU6500 IMU ready=1` remained valid, and I2C baseline stayed normal with `SCL=1`, `SDA=1`.
 - Final chassis direction configuration: `CHASSIS_LEFT_SIGN = -1`, `CHASSIS_RIGHT_SIGN = 1`.
-- Current speed balance test duty: `500`.
-- Current known issue: UART logs may interleave when IMU and BALANCE logs print at the same time.
+- Current wheel speed PI test target: `800 ticks/sample`; feedforward duty: `500`; duty limit: `300..600`.
+- Current known issue: PI speed is still slightly above target and UART logs may interleave when IMU and PI logs print at the same time.
 
 ## Planned Firmware Modules
 
@@ -68,4 +69,4 @@ Use the `Docs/` folders to keep project evidence organized:
 
 ## Next Step
 
-Proceed to closed-loop wheel speed PID, or clean up UART logging with a log mutex / serialized logging path.
+Tune wheel speed PI parameters, or add IMU yaw heading hold above the PI speed layer.
