@@ -24,9 +24,10 @@
 - Step 4 Chassis Open-Loop Test is complete. The chassis open-loop path has been verified with `MPU6500 IMU ready=1`, AT8236 motor driver output, Motor A/B PWM forward/reverse, TIM2/TIM4 encoder counting, and chassis `Forward`, `Backward`, `TurnLeft`, and `TurnRight` actions.
 - Step 5 Encoder Speed Balance Test is complete. With `base_duty=500`, `CHASSIS_LEFT_TRIM=-10`, and `CHASSIS_RIGHT_TRIM=10`, P-only balance reduces left/right wheel speed difference. During the second half of forward motion, `err` can usually be reduced to about `+/-10 ticks/sample`. Backward motion can run, but `err` fluctuates slightly more and will be optimized in the later PID stage. `MPU6500 IMU ready=1` remained valid during the test.
 - Step 6 Wheel Speed PI Closed-Loop Test is complete. With `target_ticks_per_sample=800`, `feedforward_duty=500`, and duty limited to `300..600`, both Forward PI and Backward PI ran to completion. Startup duty briefly reached `600`, then stabilized around `470..500`; later encoder deltas were mostly `810..830 ticks/sample`, close to the `800` target. `MPU6500 IMU ready=1` remained valid, and I2C baseline stayed normal with `SCL=1`, `SDA=1`.
+- Step 7 Heading Hold Test has a saved baseline. It uses MPU6500 gyro-Z yaw integration above the Step6 wheel speed PI loop, with `yaw_error = current_yaw - target_yaw` and explicit left/right target correction. Current conservative parameters are `HEADING_K_FORWARD=2`, `HEADING_K_BACKWARD=2`, and correction limits of `50 ticks/sample` in both directions. Forward heading hold is clearly improved with final yaw around `7.1 deg`; backward can run but still has about `+7 deg` final error relative to its target. `MPU6500 IMU ready=1` remained valid and I2C stayed normal.
 - Final chassis direction configuration: `CHASSIS_LEFT_SIGN = -1`, `CHASSIS_RIGHT_SIGN = 1`.
 - Current wheel speed PI test target: `800 ticks/sample`; feedforward duty: `500`; duty limit: `300..600`.
-- Current known issue: PI speed is still slightly above target and UART logs may interleave when IMU and PI logs print at the same time.
+- Current known issue: backward heading hold still needs tuning, and UART logs may interleave when IMU and control logs print at the same time.
 
 ## Planned Firmware Modules
 
@@ -69,4 +70,4 @@ Use the `Docs/` folders to keep project evidence organized:
 
 ## Next Step
 
-Tune wheel speed PI parameters, or add IMU yaw heading hold above the PI speed layer.
+Tune backward heading correction, or add odometry-yaw fusion above the wheel speed PI layer.

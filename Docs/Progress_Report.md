@@ -11,6 +11,7 @@ Last updated: 2026-05-20
 - Step 4: Chassis open-loop test completed.
 - Step 5: Encoder speed balance test completed.
 - Step 6: Wheel speed PI closed-loop test completed.
+- Step 7: Heading hold straight-line test has a saved baseline.
 
 ## Step4 Chassis Open-Loop Test
 
@@ -142,3 +143,54 @@ CHASSIS_RIGHT_SIGN = 1
 
 - Tune PI parameters for tighter speed tracking.
 - Or add IMU yaw heading hold above the wheel speed PI layer.
+
+## Step7 Heading Hold Straight-Line Test
+
+### Test Objective
+
+- Add a short-duration heading hold layer above the Step6 wheel speed PI controller.
+- Estimate relative yaw by integrating MPU6500 gyro-Z rate.
+- Bias left and right wheel speed targets to reduce yaw drift.
+- Confirm the MPU6500 IMU and I2C baseline remain healthy during heading hold motion.
+
+### Key Implementation
+
+- Used gyro-Z yaw integration from the MPU6500.
+- Used `yaw_error = current_yaw - target_yaw`.
+- Used explicit left/right target correction:
+
+```text
+heading_correction = K_heading * yaw_error
+left_target = base_target + heading_correction
+right_target = base_target - heading_correction
+```
+
+- Reused the Step6 wheel speed PI controller without changing the PI parameters.
+- Kept `target_ticks_per_sample=800`.
+- Current conservative heading parameters:
+
+```c
+HEADING_K_FORWARD = 2
+HEADING_K_BACKWARD = 2
+HEADING_CORR_LIMIT_FORWARD = 50
+HEADING_CORR_LIMIT_BACKWARD = 50
+```
+
+### Test Results
+
+- Step7 heading hold test now has a saved baseline.
+- Forward heading hold is clearly improved; final yaw was about `7.1 deg`.
+- Backward heading hold can run, but final yaw error was larger at about `+7 deg` relative to the backward target.
+- `APP IMU: ready=1` remained valid during the test.
+- I2C baseline remained normal.
+
+### Known Limitations
+
+- Backward heading hold still needs tuning.
+- Gyro-only yaw integration is relative and will drift over longer runs.
+- UART logs may occasionally interleave with IMU or control logs.
+
+### Next Stage Plan
+
+- Tune backward heading correction.
+- Add odometry-yaw fusion above the wheel speed PI layer.

@@ -29,16 +29,16 @@
 #include "i2c.h"
 #include "i2c_scan.h"
 #include "mpu6500.h"
-#if APP_ENABLE_CHASSIS_OPENLOOP_TEST || APP_ENABLE_CHASSIS_DIRECTION_CAL_TEST || APP_ENABLE_CHASSIS_GROUND_TRACTION_TEST || APP_ENABLE_CHASSIS_SPEED_BALANCE_TEST || APP_ENABLE_WHEEL_SPEED_PI_TEST
+#if APP_ENABLE_CHASSIS_OPENLOOP_TEST || APP_ENABLE_CHASSIS_DIRECTION_CAL_TEST || APP_ENABLE_CHASSIS_GROUND_TRACTION_TEST || APP_ENABLE_CHASSIS_SPEED_BALANCE_TEST || APP_ENABLE_WHEEL_SPEED_PI_TEST || APP_ENABLE_HEADING_HOLD_TEST
 #include "chassis.h"
 #endif
-#if (APP_ENABLE_MOTOR_TEST && !APP_ENABLE_MOTOR_GPIO_STATIC_TEST) || APP_ENABLE_CHASSIS_OPENLOOP_TEST || APP_ENABLE_CHASSIS_DIRECTION_CAL_TEST || APP_ENABLE_CHASSIS_GROUND_TRACTION_TEST || APP_ENABLE_CHASSIS_SPEED_BALANCE_TEST || APP_ENABLE_WHEEL_SPEED_PI_TEST
+#if (APP_ENABLE_MOTOR_TEST && !APP_ENABLE_MOTOR_GPIO_STATIC_TEST) || APP_ENABLE_CHASSIS_OPENLOOP_TEST || APP_ENABLE_CHASSIS_DIRECTION_CAL_TEST || APP_ENABLE_CHASSIS_GROUND_TRACTION_TEST || APP_ENABLE_CHASSIS_SPEED_BALANCE_TEST || APP_ENABLE_WHEEL_SPEED_PI_TEST || APP_ENABLE_HEADING_HOLD_TEST
 #include "motor_driver.h"
 #endif
 #if APP_ENABLE_MOTOR_TEST && !APP_ENABLE_MOTOR_GPIO_STATIC_TEST
 #include "tim.h"
 #endif
-#if APP_ENABLE_WHEEL_SPEED_PI_TEST
+#if APP_ENABLE_WHEEL_SPEED_PI_TEST || APP_ENABLE_HEADING_HOLD_TEST
 #include "wheel_speed_controller.h"
 #endif
 
@@ -119,6 +119,17 @@ typedef void (*App_ChassisCommand_t)(int16_t duty);
 #define WHEEL_SPEED_PI_INTEGRAL_LIMIT 2000
 #define WHEEL_SPEED_PI_DUTY_MIN 300
 #define WHEEL_SPEED_PI_DUTY_MAX CHASSIS_MAX_OPENLOOP_DUTY
+#define HEADING_HOLD_INITIAL_STOP_MS 2000U
+#define HEADING_HOLD_BETWEEN_STOP_MS 2000U
+#define HEADING_HOLD_RUN_MS 6000U
+#define HEADING_HOLD_SAMPLE_PERIOD_MS WHEEL_SPEED_PI_SAMPLE_PERIOD_MS
+#define HEADING_HOLD_BASE_TARGET_TICKS_PER_SAMPLE WHEEL_SPEED_PI_TARGET_TICKS_PER_SAMPLE
+#define HEADING_K_FORWARD 2
+#define HEADING_K_BACKWARD 2
+#define HEADING_CORR_LIMIT_FORWARD 50
+#define HEADING_CORR_LIMIT_BACKWARD 50
+#define HEADING_HOLD_TARGET_MIN_TICKS 600
+#define HEADING_HOLD_TARGET_MAX_TICKS 900
 #define I2C_BASELINE_SCL_GPIO_PORT GPIOB
 #define I2C_BASELINE_SCL_PIN GPIO_PIN_8
 #define I2C_BASELINE_SDA_GPIO_PORT GPIOB
@@ -246,6 +257,30 @@ static void App_LogWheelSpeedPiStatus(const char *direction_name,
                                       int32_t delta_b,
                                       const WheelSpeedController_State_t *left_state,
                                       const WheelSpeedController_State_t *right_state);
+#endif
+#if APP_ENABLE_HEADING_HOLD_TEST
+static void App_RunHeadingHoldTest(void);
+static void App_RunHeadingHoldPhase(const char *direction_name,
+                                    int8_t direction,
+                                    float target_yaw_deg,
+                                    float *yaw_deg,
+                                    uint32_t *last_imu_update_ms,
+                                    const WheelSpeedController_Config_t *base_config);
+static float App_UpdateHeadingYawDeg(float yaw_deg, uint32_t *last_imu_update_ms);
+static int32_t App_LimitI32(int32_t value, int32_t min_value, int32_t max_value);
+static void App_LogHeadingHoldStatus(const char *direction_name,
+                                     float target_yaw_deg,
+                                     float yaw_deg,
+                                     float yaw_error_deg,
+                                     int32_t k_heading,
+                                     int32_t correction_limit_ticks,
+                                     int32_t heading_correction_ticks,
+                                     int32_t left_target_ticks,
+                                     int32_t right_target_ticks,
+                                     int32_t delta_a,
+                                     int32_t delta_b,
+                                     int16_t left_duty,
+                                     int16_t right_duty);
 #endif
 #if APP_ENABLE_MOTOR_GPIO_STATIC_TEST
 static void App_RunMotorGpioStaticTest(void);
@@ -439,6 +474,8 @@ void StartTask05(void *argument)
   App_RunChassisSpeedBalanceTest();
 #elif APP_ENABLE_WHEEL_SPEED_PI_TEST
   App_RunWheelSpeedPiTest();
+#elif APP_ENABLE_HEADING_HOLD_TEST
+  App_RunHeadingHoldTest();
 #endif
 
   /* Infinite loop */
@@ -1111,6 +1148,230 @@ static void App_LogWheelSpeedPiStatus(const char *direction_name,
                  (long)right_state->error,
                  (long)left_state->integral,
                  (long)right_state->integral);
+  printf("%s", log_line);
+}
+#endif
+
+#if APP_ENABLE_HEADING_HOLD_TEST
+static void App_RunHeadingHoldTest(void)
+{
+  static const WheelSpeedController_Config_t heading_speed_pi_config = {
+    .target_ticks_per_sample = HEADING_HOLD_BASE_TARGET_TICKS_PER_SAMPLE,
+    .feedforward_duty = WHEEL_SPEED_PI_FEEDFORWARD_DUTY,
+    .kp_num = WHEEL_SPEED_PI_KP_NUM,
+    .ki_num = WHEEL_SPEED_PI_KI_NUM,
+    .gain_den = WHEEL_SPEED_PI_GAIN_DEN,
+    .integral_limit = WHEEL_SPEED_PI_INTEGRAL_LIMIT,
+    .duty_min = WHEEL_SPEED_PI_DUTY_MIN,
+    .duty_max = WHEEL_SPEED_PI_DUTY_MAX,
+  };
+
+  float yaw_deg = 0.0f;
+  uint32_t last_imu_update_ms = 0U;
+
+  printf("[HEADING] heading hold test start\r\n");
+
+  Chassis_Init();
+  Chassis_Stop();
+  osDelay(HEADING_HOLD_INITIAL_STOP_MS);
+
+  last_imu_update_ms = 0U;
+  yaw_deg = App_UpdateHeadingYawDeg(yaw_deg, &last_imu_update_ms);
+  float target_yaw_deg = yaw_deg;
+
+  MotorDriver_ResetEncoders();
+  App_RunHeadingHoldPhase("forward",
+                          1,
+                          target_yaw_deg,
+                          &yaw_deg,
+                          &last_imu_update_ms,
+                          &heading_speed_pi_config);
+  Chassis_Stop();
+  MotorDriver_StopAll();
+  osDelay(HEADING_HOLD_BETWEEN_STOP_MS);
+
+  last_imu_update_ms = 0U;
+  yaw_deg = App_UpdateHeadingYawDeg(yaw_deg, &last_imu_update_ms);
+  target_yaw_deg = yaw_deg;
+
+  MotorDriver_ResetEncoders();
+  App_RunHeadingHoldPhase("backward",
+                          -1,
+                          target_yaw_deg,
+                          &yaw_deg,
+                          &last_imu_update_ms,
+                          &heading_speed_pi_config);
+  Chassis_Stop();
+  MotorDriver_StopAll();
+
+  printf("[HEADING] heading hold test done\r\n");
+}
+
+static void App_RunHeadingHoldPhase(const char *direction_name,
+                                    int8_t direction,
+                                    float target_yaw_deg,
+                                    float *yaw_deg,
+                                    uint32_t *last_imu_update_ms,
+                                    const WheelSpeedController_Config_t *base_config)
+{
+  WheelSpeedController_Config_t left_config = *base_config;
+  WheelSpeedController_Config_t right_config = *base_config;
+  WheelSpeedController_State_t left_state;
+  WheelSpeedController_State_t right_state;
+
+  WheelSpeedController_Reset(&left_state);
+  WheelSpeedController_Reset(&right_state);
+
+  int32_t previous_enc_a = MotorDriver_GetEncoderA();
+  int32_t previous_enc_b = MotorDriver_GetEncoderB();
+  int16_t left_mag = base_config->feedforward_duty;
+  int16_t right_mag = base_config->feedforward_duty;
+  int16_t left_cmd = (direction > 0) ? left_mag : (int16_t)-left_mag;
+  int16_t right_cmd = (direction > 0) ? right_mag : (int16_t)-right_mag;
+  int32_t k_heading = (direction > 0) ? HEADING_K_FORWARD : HEADING_K_BACKWARD;
+  int32_t correction_limit_ticks = (direction > 0) ? HEADING_CORR_LIMIT_FORWARD : HEADING_CORR_LIMIT_BACKWARD;
+
+  Chassis_SetRaw(left_cmd, right_cmd);
+
+  for (uint32_t elapsed_ms = 0U;
+       elapsed_ms < HEADING_HOLD_RUN_MS;
+       elapsed_ms += HEADING_HOLD_SAMPLE_PERIOD_MS)
+  {
+    osDelay(HEADING_HOLD_SAMPLE_PERIOD_MS);
+
+    *yaw_deg = App_UpdateHeadingYawDeg(*yaw_deg, last_imu_update_ms);
+
+    int32_t enc_a = MotorDriver_GetEncoderA();
+    int32_t enc_b = MotorDriver_GetEncoderB();
+    int32_t delta_a = enc_a - previous_enc_a;
+    int32_t delta_b = enc_b - previous_enc_b;
+    int32_t speed_left = (delta_a < 0) ? -delta_a : delta_a;
+    int32_t speed_right = (delta_b < 0) ? -delta_b : delta_b;
+    float yaw_error_deg = *yaw_deg - target_yaw_deg;
+    int32_t yaw_error_tenth_deg = App_ScaleFloatRounded(yaw_error_deg, 10.0f);
+    int32_t heading_correction_ticks = (k_heading * yaw_error_tenth_deg) / 10;
+
+    heading_correction_ticks = App_LimitI32(heading_correction_ticks,
+                                            -correction_limit_ticks,
+                                            correction_limit_ticks);
+
+    int32_t left_target_ticks = App_LimitI32(HEADING_HOLD_BASE_TARGET_TICKS_PER_SAMPLE + heading_correction_ticks,
+                                            HEADING_HOLD_TARGET_MIN_TICKS,
+                                            HEADING_HOLD_TARGET_MAX_TICKS);
+    int32_t right_target_ticks = App_LimitI32(HEADING_HOLD_BASE_TARGET_TICKS_PER_SAMPLE - heading_correction_ticks,
+                                             HEADING_HOLD_TARGET_MIN_TICKS,
+                                             HEADING_HOLD_TARGET_MAX_TICKS);
+
+    left_config.target_ticks_per_sample = left_target_ticks;
+    right_config.target_ticks_per_sample = right_target_ticks;
+
+    left_mag = WheelSpeedController_Update(&left_state, &left_config, speed_left);
+    right_mag = WheelSpeedController_Update(&right_state, &right_config, speed_right);
+    left_cmd = (direction > 0) ? left_mag : (int16_t)-left_mag;
+    right_cmd = (direction > 0) ? right_mag : (int16_t)-right_mag;
+
+    Chassis_SetRaw(left_cmd, right_cmd);
+    App_LogHeadingHoldStatus(direction_name,
+                             target_yaw_deg,
+                             *yaw_deg,
+                             yaw_error_deg,
+                             k_heading,
+                             correction_limit_ticks,
+                             heading_correction_ticks,
+                             left_target_ticks,
+                             right_target_ticks,
+                             delta_a,
+                             delta_b,
+                             left_cmd,
+                             right_cmd);
+
+    previous_enc_a = enc_a;
+    previous_enc_b = enc_b;
+  }
+}
+
+static float App_UpdateHeadingYawDeg(float yaw_deg, uint32_t *last_imu_update_ms)
+{
+  MPU6500_Data_t imu;
+
+  if ((last_imu_update_ms == 0) || (MPU6500_GetLatest(&imu) == false))
+  {
+    return yaw_deg;
+  }
+
+  if (*last_imu_update_ms == 0U)
+  {
+    *last_imu_update_ms = imu.last_update_ms;
+    return yaw_deg;
+  }
+
+  uint32_t dt_ms = imu.last_update_ms - *last_imu_update_ms;
+  *last_imu_update_ms = imu.last_update_ms;
+
+  if ((dt_ms == 0U) || (dt_ms > 500U))
+  {
+    return yaw_deg;
+  }
+
+  return yaw_deg + (imu.gz_dps * ((float)dt_ms / 1000.0f));
+}
+
+static int32_t App_LimitI32(int32_t value, int32_t min_value, int32_t max_value)
+{
+  if (value < min_value)
+  {
+    return min_value;
+  }
+
+  if (value > max_value)
+  {
+    return max_value;
+  }
+
+  return value;
+}
+
+static void App_LogHeadingHoldStatus(const char *direction_name,
+                                     float target_yaw_deg,
+                                     float yaw_deg,
+                                     float yaw_error_deg,
+                                     int32_t k_heading,
+                                     int32_t correction_limit_ticks,
+                                     int32_t heading_correction_ticks,
+                                     int32_t left_target_ticks,
+                                     int32_t right_target_ticks,
+                                     int32_t delta_a,
+                                     int32_t delta_b,
+                                     int16_t left_duty,
+                                     int16_t right_duty)
+{
+  char log_line[384];
+  int32_t target_yaw_tenth_deg = App_ScaleFloatRounded(target_yaw_deg, 10.0f);
+  int32_t yaw_tenth_deg = App_ScaleFloatRounded(yaw_deg, 10.0f);
+  int32_t yaw_error_tenth_deg = App_ScaleFloatRounded(yaw_error_deg, 10.0f);
+
+  (void)snprintf(log_line,
+                 sizeof(log_line),
+                 "[HEADING] dir=%s target_yaw=%s%lu.%01lu yaw=%s%lu.%01lu yaw_error_current_minus_target=%s%lu.%01lu k_heading=%ld corr_limit=%ld heading_corr=%ld left_target=%ld right_target=%ld dA=%ld dB=%ld left_duty=%d right_duty=%d\r\n",
+                 direction_name,
+                 App_FixedSign(target_yaw_tenth_deg),
+                 (unsigned long)App_FixedWhole(target_yaw_tenth_deg, 10),
+                 (unsigned long)App_FixedFraction(target_yaw_tenth_deg, 10),
+                 App_FixedSign(yaw_tenth_deg),
+                 (unsigned long)App_FixedWhole(yaw_tenth_deg, 10),
+                 (unsigned long)App_FixedFraction(yaw_tenth_deg, 10),
+                 App_FixedSign(yaw_error_tenth_deg),
+                 (unsigned long)App_FixedWhole(yaw_error_tenth_deg, 10),
+                 (unsigned long)App_FixedFraction(yaw_error_tenth_deg, 10),
+                 (long)k_heading,
+                 (long)correction_limit_ticks,
+                 (long)heading_correction_ticks,
+                 (long)left_target_ticks,
+                 (long)right_target_ticks,
+                 (long)delta_a,
+                 (long)delta_b,
+                 (int)left_duty,
+                 (int)right_duty);
   printf("%s", log_line);
 }
 #endif
