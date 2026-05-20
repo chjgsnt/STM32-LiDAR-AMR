@@ -14,13 +14,17 @@
 - VSCode with STM32CubeIDE extension
 - STM32CubeCLT
 
-## Current Status
+## Project Progress / Bring-Up Status
 
 - Step 0 created the baseline project file structure for later firmware, documentation, tools, and tests.
 - Step 1 created the first STM32CubeMX configuration for core bring-up peripherals and middleware.
 - Step 2 verified the generated configuration on hardware with USART2 logging, FreeRTOS startup, I2C1 scanning, and basic I2C module bring-up.
 - MPU6500 IMU bring-up is verified on I2C1 at address `0x68`: `WHO_AM_I = 0x70`, raw accelerometer/gyroscope data, `g` / `dps` conversion, gyro bias calibration, pitch/roll, complementary-filter fused pitch/roll, and App-layer readout are working.
-- The current default hardware validation setup connects the MPU6500 only; the OLED is not connected.
+- Step 3 verified the AT8236 motor driver path, Motor A/B PWM forward/reverse output, and TIM2/TIM4 encoder counting.
+- Step 4 Chassis Open-Loop Test is complete. The chassis open-loop path has been verified with `MPU6500 IMU ready=1`, AT8236 motor driver output, Motor A/B PWM forward/reverse, TIM2/TIM4 encoder counting, and chassis `Forward`, `Backward`, `TurnLeft`, and `TurnRight` actions.
+- Final chassis direction configuration: `CHASSIS_LEFT_SIGN = -1`, `CHASSIS_RIGHT_SIGN = 1`.
+- Current ground open-loop test duty: `500`.
+- Known limitation: open-loop forward/backward motion is not straight enough; the next control step is encoder speed balance / speed PID.
 
 ## Planned Firmware Modules
 
@@ -41,6 +45,7 @@
 Use the `Docs/` folders to keep project evidence organized:
 
 - `Docs/01_Module_Test/`: module bring-up notes, including MPU6500 IMU validation
+- `Docs/Progress_Report.md`: project bring-up progress report
 - `Docs/02_Debug_Logs/`: serial logs and runtime traces
 - `Docs/03_OLED_Photos/`: OLED display photos during tests
 - `Docs/04_Logic_Analyzer/`: UART, I2C, PWM, and encoder captures
@@ -62,4 +67,4 @@ Use the `Docs/` folders to keep project evidence organized:
 
 ## Next Step
 
-Continue from the verified IMU path by recording serial evidence as needed, then proceed to the next hardware module such as USART1 LiDAR RX DMA / packet parsing or motor-driver bring-up.
+Proceed to Step5 Encoder Speed Balance Test: use encoder feedback to balance left/right wheel speed, then move toward closed-loop speed PID for straighter forward/backward motion.
