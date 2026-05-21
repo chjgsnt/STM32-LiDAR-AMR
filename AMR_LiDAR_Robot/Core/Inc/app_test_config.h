@@ -17,7 +17,7 @@
  * Do not commit or push an enabled=1 version to GitHub.
  */
 #ifndef APP_OBSTACLE_MOTOR_ENABLE
-#define APP_OBSTACLE_MOTOR_ENABLE 0
+#define APP_OBSTACLE_MOTOR_ENABLE 1
 #endif
 
 /*
@@ -38,7 +38,7 @@
  * Do not commit or push a ground=1 version to GitHub.
  */
 #ifndef APP_OBSTACLE_GROUND_TEST_ENABLE
-#define APP_OBSTACLE_GROUND_TEST_ENABLE 0
+#define APP_OBSTACLE_GROUND_TEST_ENABLE 1
 #endif
 
 /*
@@ -77,6 +77,28 @@
 
 #ifndef APP_GROUND_TURN_SWITCH_MARGIN_MM
 #define APP_GROUND_TURN_SWITCH_MARGIN_MM 120
+#endif
+
+/*
+ * Near-wall escape direction lock.
+ *
+ * When the front obstacle distance is very close, choose one escape turn
+ * direction and keep it long enough to avoid left/right indecision near walls.
+ */
+#ifndef APP_GROUND_ESCAPE_LOCK_MS
+#define APP_GROUND_ESCAPE_LOCK_MS 1200
+#endif
+
+#ifndef APP_GROUND_ESCAPE_ENTER_MM
+#define APP_GROUND_ESCAPE_ENTER_MM 450
+#endif
+
+#ifndef APP_GROUND_ESCAPE_EXIT_MM
+#define APP_GROUND_ESCAPE_EXIT_MM 520
+#endif
+
+#ifndef APP_GROUND_ESCAPE_TIMEOUT_SWITCH_MARGIN_MM
+#define APP_GROUND_ESCAPE_TIMEOUT_SWITCH_MARGIN_MM 150
 #endif
 
 /*
@@ -126,6 +148,26 @@
 
 #ifndef APP_GROUND_BACKUP_SPEED
 #define APP_GROUND_BACKUP_SPEED 300
+#endif
+
+#ifndef APP_GROUND_CORNER_DETECT_MS
+#define APP_GROUND_CORNER_DETECT_MS 3500
+#endif
+
+#ifndef APP_GROUND_CORNER_BACKUP_MS
+#define APP_GROUND_CORNER_BACKUP_MS 1000
+#endif
+
+#ifndef APP_GROUND_CORNER_TURN_MS
+#define APP_GROUND_CORNER_TURN_MS 2200
+#endif
+
+#ifndef APP_GROUND_CORNER_BACKUP_SPEED
+#define APP_GROUND_CORNER_BACKUP_SPEED 350
+#endif
+
+#ifndef APP_GROUND_CORNER_COOLDOWN_MS
+#define APP_GROUND_CORNER_COOLDOWN_MS 3000
 #endif
 
 #ifndef APP_GROUND_BACKUP_COOLDOWN_MS
