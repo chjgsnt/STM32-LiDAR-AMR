@@ -21,6 +21,7 @@
 #define APP_LIDAR_ZONE_MIN_DISTANCE_MM 120U
 #define APP_LIDAR_MAX_DISTANCE_MM 12000U
 #define APP_LIDAR_MIN_DISTANCE_NONE 0xFFFFFFFFUL
+#define APP_LIDAR_STATUS_DISTANCE_INVALID 0xFFFFU
 #define APP_LIDAR_ZONE_MIN_QUALITY 8U
 #define APP_LIDAR_FRONT_MIN_TENTH_DEG 200U
 #define APP_LIDAR_FRONT_MAX_TENTH_DEG 650U
@@ -50,6 +51,7 @@ typedef struct
     uint32_t last_angle_tenth_deg;
     uint32_t scan_start_count;
     uint32_t descriptor_payload_len;
+    uint8_t ready;
     uint8_t descriptor_seen;
     uint8_t descriptor_pending;
     uint8_t descriptor[APP_LIDAR_DESCRIPTOR_SIZE];
@@ -90,6 +92,7 @@ static App_Lidar_ScanNode_t App_Lidar_DecodeScanNode(const uint8_t *node);
 static void App_Lidar_UpdateZoneMins(const App_Lidar_ScanNode_t *node);
 static void App_Lidar_ShiftNodeBuffer(void);
 static void App_Lidar_CopySnapshot(App_Lidar_Snapshot_t *snapshot);
+static void App_Lidar_UpdatePublishedStatus(const App_Lidar_Snapshot_t *snapshot);
 static void App_Lidar_MarkDescriptorPrinted(void);
 static void App_Lidar_FormatBytes(const uint8_t *bytes, uint8_t count, char *text, uint32_t text_size);
 
@@ -133,13 +136,30 @@ static volatile uint8_t app_lidar_has_nearest;
 static volatile uint8_t app_lidar_nearest_quality;
 static volatile uint8_t app_lidar_has_angle;
 
+static AppLidarStatus app_lidar_status;
 static bool app_lidar_initialized;
+
+const AppLidarStatus *App_Lidar_GetStatus(void)
+{
+    return &app_lidar_status;
+}
 
 void App_Lidar_Init(void)
 {
     app_lidar_rx_bytes = 0U;
     app_lidar_sample_write_index = 0U;
     app_lidar_sample_count = 0U;
+    app_lidar_status.ready = 0U;
+    app_lidar_status.rx_bytes = 0U;
+    app_lidar_status.valid_points = 0U;
+    app_lidar_status.front_min_mm = APP_LIDAR_STATUS_DISTANCE_INVALID;
+    app_lidar_status.left_min_mm = APP_LIDAR_STATUS_DISTANCE_INVALID;
+    app_lidar_status.right_min_mm = APP_LIDAR_STATUS_DISTANCE_INVALID;
+    app_lidar_status.front_valid = 0U;
+    app_lidar_status.left_valid = 0U;
+    app_lidar_status.right_valid = 0U;
+    app_lidar_status.nearest_angle_deg = 0.0f;
+    app_lidar_status.nearest_distance_mm = APP_LIDAR_STATUS_DISTANCE_INVALID;
     App_Lidar_ResetParser();
     app_lidar_initialized = true;
 
@@ -175,7 +195,7 @@ void App_Lidar_Task(void)
     char sample_text[APP_LIDAR_SAMPLE_TEXT_SIZE];
     char descriptor_text[APP_LIDAR_DESCRIPTOR_TEXT_SIZE];
     char type_text[8];
-    char min_text[16];
+    char debug_min_text[16];
     char front_text[16];
     char left_text[16];
     char right_text[16];
@@ -187,6 +207,7 @@ void App_Lidar_Task(void)
                           snapshot.sample_count,
                           sample_text,
                           (uint32_t)sizeof(sample_text));
+    App_Lidar_UpdatePublishedStatus(&snapshot);
 
     if (snapshot.descriptor_pending != 0U)
     {
@@ -220,11 +241,11 @@ void App_Lidar_Task(void)
 
     if (snapshot.has_valid_distance != 0U)
     {
-        (void)snprintf(min_text, sizeof(min_text), "%lumm", (unsigned long)snapshot.min_distance_mm);
+        (void)snprintf(debug_min_text, sizeof(debug_min_text), "%lumm", (unsigned long)snapshot.min_distance_mm);
     }
     else
     {
-        (void)snprintf(min_text, sizeof(min_text), "--");
+        (void)snprintf(debug_min_text, sizeof(debug_min_text), "--");
     }
 
     if (snapshot.has_front_distance != 0U)
@@ -282,21 +303,22 @@ void App_Lidar_Task(void)
         (void)snprintf(angle_text, sizeof(angle_text), "--");
     }
 
-    APP_LOG("APP LiDAR: rx_bytes=%lu type=%s parsed=%lu valid=%lu invalid_header=%lu invalid_range=%lu zero_quality=%lu min=%s nearest=%s front=%s left=%s right=%s angle=%s scan_start=%lu sample=%s",
+    APP_LOG("APP LiDAR: ready=%u rx=%lu type=%s valid=%lu nearest=%s front=%s left=%s right=%s scan_start=%lu debug_min=%s parsed=%lu invalid_header=%lu invalid_range=%lu zero_quality=%lu angle=%s sample=%s",
+            (unsigned int)snapshot.ready,
             (unsigned long)snapshot.rx_bytes,
             type_text,
-            (unsigned long)snapshot.parsed_points,
             (unsigned long)snapshot.valid_points,
-            (unsigned long)snapshot.invalid_header,
-            (unsigned long)snapshot.invalid_range,
-            (unsigned long)snapshot.zero_quality,
-            min_text,
             nearest_text,
             front_text,
             left_text,
             right_text,
-            angle_text,
             (unsigned long)snapshot.scan_start_count,
+            debug_min_text,
+            (unsigned long)snapshot.parsed_points,
+            (unsigned long)snapshot.invalid_header,
+            (unsigned long)snapshot.invalid_range,
+            (unsigned long)snapshot.zero_quality,
+            angle_text,
             sample_text);
 }
 
@@ -652,6 +674,7 @@ static void App_Lidar_CopySnapshot(App_Lidar_Snapshot_t *snapshot)
     snapshot->last_angle_tenth_deg = app_lidar_last_angle_tenth_deg;
     snapshot->scan_start_count = app_lidar_scan_start_count;
     snapshot->descriptor_payload_len = app_lidar_descriptor_payload_len;
+    snapshot->ready = app_lidar_descriptor_seen;
     snapshot->descriptor_seen = app_lidar_descriptor_seen;
     snapshot->descriptor_pending = app_lidar_descriptor_pending;
     snapshot->descriptor_data_type = app_lidar_descriptor_data_type;
@@ -688,6 +711,49 @@ static void App_Lidar_CopySnapshot(App_Lidar_Snapshot_t *snapshot)
     for (uint8_t i = 0U; i < count; i++)
     {
         snapshot->sample[i] = app_lidar_sample[(start + i) % APP_LIDAR_SAMPLE_SIZE];
+    }
+
+    if (primask == 0U)
+    {
+        __enable_irq();
+    }
+}
+
+static void App_Lidar_UpdatePublishedStatus(const App_Lidar_Snapshot_t *snapshot)
+{
+    if (snapshot == NULL)
+    {
+        return;
+    }
+
+    uint32_t primask = __get_PRIMASK();
+    __disable_irq();
+
+    app_lidar_status.ready = snapshot->ready;
+    app_lidar_status.rx_bytes = snapshot->rx_bytes;
+    app_lidar_status.valid_points = snapshot->valid_points;
+    app_lidar_status.front_valid = snapshot->has_front_distance;
+    app_lidar_status.left_valid = snapshot->has_left_distance;
+    app_lidar_status.right_valid = snapshot->has_right_distance;
+    app_lidar_status.front_min_mm = (snapshot->has_front_distance != 0U)
+        ? (uint16_t)snapshot->front_min_mm
+        : (uint16_t)APP_LIDAR_STATUS_DISTANCE_INVALID;
+    app_lidar_status.left_min_mm = (snapshot->has_left_distance != 0U)
+        ? (uint16_t)snapshot->left_min_mm
+        : (uint16_t)APP_LIDAR_STATUS_DISTANCE_INVALID;
+    app_lidar_status.right_min_mm = (snapshot->has_right_distance != 0U)
+        ? (uint16_t)snapshot->right_min_mm
+        : (uint16_t)APP_LIDAR_STATUS_DISTANCE_INVALID;
+
+    if (snapshot->has_nearest != 0U)
+    {
+        app_lidar_status.nearest_distance_mm = (uint16_t)snapshot->nearest_distance_mm;
+        app_lidar_status.nearest_angle_deg = (float)snapshot->nearest_angle_tenth_deg / 10.0f;
+    }
+    else
+    {
+        app_lidar_status.nearest_distance_mm = (uint16_t)APP_LIDAR_STATUS_DISTANCE_INVALID;
+        app_lidar_status.nearest_angle_deg = 0.0f;
     }
 
     if (primask == 0U)
