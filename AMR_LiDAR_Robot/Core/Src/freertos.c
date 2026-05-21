@@ -26,6 +26,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "app_lidar.h"
+#include "app_obstacle.h"
 #include "bringup_log.h"
 #include "i2c.h"
 #include "i2c_scan.h"
@@ -412,6 +413,7 @@ void StartTask02(void *argument)
   /* USER CODE BEGIN StartTask02 */
 #if APP_ENABLE_LIDAR_BRINGUP_TEST
   App_Lidar_Init();
+  App_Obstacle_Init();
 #endif
 
   /* Infinite loop */
@@ -419,6 +421,7 @@ void StartTask02(void *argument)
   {
 #if APP_ENABLE_LIDAR_BRINGUP_TEST
     App_Lidar_Task();
+    App_Obstacle_Task();
     osDelay(50);
 #else
     osDelay(1000);
