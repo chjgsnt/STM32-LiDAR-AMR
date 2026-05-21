@@ -17,7 +17,7 @@
  * Do not commit or push an enabled=1 version to GitHub.
  */
 #ifndef APP_OBSTACLE_MOTOR_ENABLE
-#define APP_OBSTACLE_MOTOR_ENABLE 1
+#define APP_OBSTACLE_MOTOR_ENABLE 0
 #endif
 
 /*
@@ -38,7 +38,7 @@
  * Do not commit or push a ground=1 version to GitHub.
  */
 #ifndef APP_OBSTACLE_GROUND_TEST_ENABLE
-#define APP_OBSTACLE_GROUND_TEST_ENABLE 1
+#define APP_OBSTACLE_GROUND_TEST_ENABLE 0
 #endif
 
 /*
@@ -60,6 +60,25 @@
 #define APP_OBSTACLE_GROUND_TEST_SPEED 500
 #endif
 
+#ifndef APP_GROUND_CAUTION_SPEED
+#define APP_GROUND_CAUTION_SPEED 350
+#endif
+
+/*
+ * Ground turn stability.
+ *
+ * Once the ground state machine starts turning left/right, keep that direction
+ * for at least this window. After the hold, switch to the opposite direction
+ * only if that side is clearly more open by the configured margin.
+ */
+#ifndef APP_GROUND_TURN_MIN_HOLD_MS
+#define APP_GROUND_TURN_MIN_HOLD_MS 700
+#endif
+
+#ifndef APP_GROUND_TURN_SWITCH_MARGIN_MM
+#define APP_GROUND_TURN_SWITCH_MARGIN_MM 120
+#endif
+
 /*
  * Ground straight-line trim.
  *
@@ -67,7 +86,7 @@
  * The current robot drifts right in CLEAR_FORWARD, so start by reducing the
  * left side and increasing the right side. If it still drifts right, increase
  * the pair in small steps. If it drifts left, move the trims back toward 0.
- * These trims are applied only to FORWARD_SLOW, not in-place turns.
+ * These trims are applied only to forward/caution driving, not in-place turns.
  */
 #ifndef APP_GROUND_LEFT_TRIM
 #define APP_GROUND_LEFT_TRIM (-20)

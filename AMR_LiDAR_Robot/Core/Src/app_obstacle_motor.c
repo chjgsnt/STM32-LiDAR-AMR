@@ -18,26 +18,29 @@
 #define APP_OBS_MOTOR_GROUND_MAX_RUN_MS 10000U
 #define APP_OBS_MOTOR_INVALID_DISTANCE_MM 0xFFFFU
 #define APP_OBS_GROUND_FORWARD_HOLD_MS 300U
-#define APP_OBS_GROUND_TURN_HOLD_MS 700U
-#define APP_OBS_GROUND_FRONT_CLEAR_MM 650U
-#define APP_OBS_GROUND_FRONT_RESUME_MM 550U
-#define APP_OBS_GROUND_FRONT_BLOCK_MM 450U
+#define APP_OBS_GROUND_TURN_HOLD_MS APP_GROUND_TURN_MIN_HOLD_MS
+#define APP_OBS_GROUND_FRONT_CLEAR_MM 750U
+#define APP_OBS_GROUND_FRONT_RESUME_MM 650U
+#define APP_OBS_GROUND_FRONT_BLOCK_MM 550U
 #define APP_OBS_GROUND_FRONT_MID_HOLD_MAX_MS 300U
-#define APP_OBS_GROUND_EMERGENCY_STOP_MM 280U
+#define APP_OBS_GROUND_EMERGENCY_STOP_MM 320U
 #define APP_OBS_GROUND_CONTACT_STOP_MM 180U
 #define APP_OBS_GROUND_SIDE_CLEAR_MM 350U
 #define APP_OBS_GROUND_SIDE_BLOCK_MM 220U
 #define APP_OBS_GROUND_HARD_STOP_MM 180U
-#define APP_OBS_GROUND_TURN_SWITCH_HYST_MM 150U
+#define APP_OBS_GROUND_APPROACHING_TURN_MM 800U
+#define APP_OBS_GROUND_TURN_SWITCH_HYST_MM APP_GROUND_TURN_SWITCH_MARGIN_MM
 #define APP_OBS_GROUND_SIDE_OPEN_SCORE_MM 12000U
 #define APP_OBS_GROUND_FRONT_HISTORY_MASK 0x07U
 #define APP_OBS_GROUND_FRONT_CONFIRM_COUNT 2U
 #define APP_OBS_GROUND_FRONT_HISTORY_SIZE 3U
+#define APP_OBS_GROUND_OBS_FRONT_HISTORY_SIZE 3U
 
 typedef enum
 {
     APP_OBS_MOTOR_ACTION_STOP = 0,
     APP_OBS_MOTOR_ACTION_FORWARD_SLOW,
+    APP_OBS_MOTOR_ACTION_FORWARD_CAUTION,
     APP_OBS_MOTOR_ACTION_TURN_LEFT_SLOW,
     APP_OBS_MOTOR_ACTION_TURN_RIGHT_SLOW,
     APP_OBS_MOTOR_ACTION_BACKUP_SLOW
@@ -47,6 +50,7 @@ typedef enum
 {
     APP_OBS_GROUND_STOP = 0,
     APP_OBS_GROUND_FORWARD,
+    APP_OBS_GROUND_CAUTION,
     APP_OBS_GROUND_TURN_LEFT,
     APP_OBS_GROUND_TURN_RIGHT,
     APP_OBS_GROUND_BACKUP,
@@ -71,6 +75,8 @@ typedef enum
     APP_OBS_GROUND_REASON_FRONT_MID_HOLD,
     APP_OBS_GROUND_REASON_FRONT_MID_HOLD_EXPIRED_TURN,
     APP_OBS_GROUND_REASON_FRONT_MID_TURN,
+    APP_OBS_GROUND_REASON_FRONT_CAUTION_FORWARD,
+    APP_OBS_GROUND_REASON_FRONT_APPROACHING_TURN,
     APP_OBS_GROUND_REASON_CONTACT_BACKUP,
     APP_OBS_GROUND_REASON_BACKUP_COMPLETE_TURN_LEFT,
     APP_OBS_GROUND_REASON_BACKUP_COMPLETE_TURN_RIGHT,
@@ -81,6 +87,12 @@ typedef enum
     APP_OBS_GROUND_REASON_HARD_STOP_TURN,
     APP_OBS_GROUND_REASON_BLOCKED_ALL_SIDES,
     APP_OBS_GROUND_REASON_STOP_BLOCKED_PRIORITY,
+    APP_OBS_GROUND_REASON_TURN_HOLD_KEEP_LEFT,
+    APP_OBS_GROUND_REASON_TURN_HOLD_KEEP_RIGHT,
+    APP_OBS_GROUND_REASON_TURN_SWITCH_MARGIN_KEEP_LEFT,
+    APP_OBS_GROUND_REASON_TURN_SWITCH_MARGIN_KEEP_RIGHT,
+    APP_OBS_GROUND_REASON_TURN_SWITCH_ALLOWED_LEFT,
+    APP_OBS_GROUND_REASON_TURN_SWITCH_ALLOWED_RIGHT,
     APP_OBS_GROUND_REASON_TURN_HOLD_MIN_KEEP_LEFT,
     APP_OBS_GROUND_REASON_TURN_HOLD_MIN_KEEP_RIGHT,
     APP_OBS_GROUND_REASON_FALLBACK_CHOOSE_LEFT,
@@ -95,6 +107,13 @@ typedef struct
     int16_t right_duty;
 } AppObstacleMotorCommand;
 
+typedef struct
+{
+    uint8_t valid;
+    uint16_t distance_mm;
+    const char *source;
+} AppObstacleFrontDistance;
+
 static AppObstacleGroundState app_ground_state = APP_OBS_GROUND_STOP;
 static uint32_t app_ground_state_enter_ms = 0U;
 static uint32_t app_forward_enter_ms = 0U;
@@ -103,33 +122,45 @@ static AppObstacleGroundState app_escape_turn_state = APP_OBS_GROUND_TURN_RIGHT;
 static uint8_t app_front_block_history = 0U;
 static uint8_t app_front_clear_history = 0U;
 static uint8_t app_front_history_count = 0U;
+static uint16_t app_obs_front_history[APP_OBS_GROUND_OBS_FRONT_HISTORY_SIZE];
+static uint8_t app_obs_front_history_count = 0U;
 
 static uint8_t App_ObstacleMotor_OutputEnabled(void);
 static int16_t App_ObstacleMotor_ConfiguredSpeed(void);
 static void App_ObstacleMotor_ResetFrontHistory(void);
-static void App_ObstacleMotor_UpdateFrontHistory(const AppLidarStatus *lidar);
+static AppObstacleFrontDistance App_ObstacleMotor_SelectObstacleFront(const AppLidarStatus *lidar);
+static void App_ObstacleMotor_UpdateFrontHistory(const AppObstacleFrontDistance *obs_front);
+static void App_ObstacleMotor_UpdateObsFrontTrend(const AppObstacleFrontDistance *obs_front);
 static uint8_t App_ObstacleMotor_FrontConfirmedBlocked(void);
 static uint8_t App_ObstacleMotor_FrontConfirmedClear(void);
+static uint8_t App_ObstacleMotor_FrontApproaching(void);
 static uint8_t App_ObstacleMotor_CountHistoryBits(uint8_t value);
 static uint8_t App_ObstacleMotor_StatusAllowsMotion(const AppLidarStatus *lidar);
 static AppObstacleGroundState App_ObstacleMotor_UpdateGroundState(const AppLidarStatus *lidar,
+                                                                  const AppObstacleFrontDistance *obs_front,
                                                                   AppObstacleDecision decision,
                                                                   uint32_t now_ms,
                                                                   uint32_t *hold_ms,
                                                                   AppObstacleGroundReason *reason);
 static AppObstacleGroundState App_ObstacleMotor_EvaluateGroundState(const AppLidarStatus *lidar,
+                                                                    const AppObstacleFrontDistance *obs_front,
                                                                     AppObstacleDecision decision,
                                                                     uint32_t now_ms,
                                                                     AppObstacleGroundReason *reason);
 static AppObstacleGroundState App_ObstacleMotor_SelectTurnState(const AppLidarStatus *lidar,
                                                                 AppObstacleDecision decision,
                                                                 AppObstacleGroundReason *reason);
+static uint8_t App_ObstacleMotor_TurnSwitchAllowed(const AppLidarStatus *lidar,
+                                                   AppObstacleGroundState current_state,
+                                                   AppObstacleGroundState desired_state,
+                                                   AppObstacleGroundReason *reason);
 static AppObstacleGroundState App_ObstacleMotor_SelectBackupTurnState(const AppLidarStatus *lidar,
                                                                       AppObstacleGroundReason *reason);
 static void App_ObstacleMotor_ForceGroundState(AppObstacleGroundState state,
                                                uint32_t now_ms,
                                                uint32_t *hold_ms);
 static AppObstacleMotorAction App_ObstacleMotor_ActionFromGroundState(AppObstacleGroundState state);
+static int16_t App_ObstacleMotor_ActionSpeed(AppObstacleMotorAction action, int16_t configured_speed);
 static AppObstacleMotorCommand App_ObstacleMotor_CommandFromAction(AppObstacleMotorAction action,
                                                                     int16_t speed,
                                                                     uint8_t start_boost);
@@ -142,6 +173,7 @@ static const char *App_ObstacleMotor_FormatDistance(uint8_t valid,
                                                      uint16_t distance_mm,
                                                      char *buffer,
                                                      uint32_t buffer_size);
+static const char *App_ObstacleMotor_FrontSourceName(const AppObstacleFrontDistance *obs_front);
 static uint32_t App_ObstacleMotor_StateHoldMs(AppObstacleGroundState state);
 static uint32_t App_ObstacleMotor_SideScore(uint8_t valid, uint16_t distance_mm);
 static uint8_t App_ObstacleMotor_SideIsClear(uint8_t valid, uint16_t distance_mm);
@@ -196,10 +228,14 @@ void App_ObstacleMotor_Task(void)
     AppObstacleGroundReason ground_reason = APP_OBS_GROUND_REASON_INIT;
     int16_t configured_speed = App_ObstacleMotor_ConfiguredSpeed();
     char front_text[16];
+    char front_wide_text[16];
+    char obs_front_text[16];
     char left_text[16];
     char right_text[16];
 
-    App_ObstacleMotor_UpdateFrontHistory(lidar);
+    AppObstacleFrontDistance obs_front = App_ObstacleMotor_SelectObstacleFront(lidar);
+    App_ObstacleMotor_UpdateFrontHistory(&obs_front);
+    App_ObstacleMotor_UpdateObsFrontTrend(&obs_front);
 
     if (App_ObstacleMotor_StatusAllowsMotion(lidar) == 0U)
     {
@@ -207,6 +243,7 @@ void App_ObstacleMotor_Task(void)
     }
 
     AppObstacleGroundState ground_state = App_ObstacleMotor_UpdateGroundState(lidar,
+                                                                              &obs_front,
                                                                               decision,
                                                                               now_ms,
                                                                               &ground_hold_ms,
@@ -244,6 +281,7 @@ void App_ObstacleMotor_Task(void)
     }
 
     AppObstacleMotorAction action = App_ObstacleMotor_ActionFromGroundState(ground_state);
+    int16_t action_speed = App_ObstacleMotor_ActionSpeed(action, configured_speed);
     if (app_backup_complete_ms != 0U)
     {
         uint32_t backup_elapsed_ms = now_ms - app_backup_complete_ms;
@@ -271,7 +309,7 @@ void App_ObstacleMotor_Task(void)
                                    (ground_state == APP_OBS_GROUND_FORWARD) &&
                                    (forward_elapsed_ms < APP_GROUND_FORWARD_START_BOOST_MS)) ? 1U : 0U;
     AppObstacleMotorCommand command = App_ObstacleMotor_CommandFromAction(action,
-                                                                          configured_speed,
+                                                                          action_speed,
                                                                           forward_start_boost);
 
     if ((now_ms - last_command_ms) >= APP_OBS_MOTOR_COMMAND_INTERVAL_MS)
@@ -326,7 +364,7 @@ void App_ObstacleMotor_Task(void)
         APP_LOG("APP OBS MOTOR: ground test timeout, force STOP");
     }
 
-    APP_LOG("APP OBS GROUND: state=%s reason=%s decision=%s front=%s left=%s right=%s hold_ms=%lu backup_cooldown_ms=%lu escape_elapsed_ms=%lu",
+    APP_LOG("APP OBS GROUND: state=%s reason=%s decision=%s front=%s front_wide=%s obs_front=%s source=%s left=%s right=%s hold_ms=%lu backup_cooldown_ms=%lu escape_elapsed_ms=%lu",
             App_ObstacleMotor_GroundStateName(ground_state),
             App_ObstacleMotor_GroundReasonName(ground_reason),
             App_ObstacleMotor_DecisionName(decision),
@@ -334,6 +372,15 @@ void App_ObstacleMotor_Task(void)
                                              (lidar != NULL) ? lidar->front_min_mm : 0U,
                                              front_text,
                                              sizeof(front_text)),
+            App_ObstacleMotor_FormatDistance(((lidar != NULL) && (lidar->ready != 0U)) ? lidar->front_wide_valid : 0U,
+                                             (lidar != NULL) ? lidar->front_wide_min_mm : 0U,
+                                             front_wide_text,
+                                             sizeof(front_wide_text)),
+            App_ObstacleMotor_FormatDistance(obs_front.valid,
+                                             obs_front.distance_mm,
+                                             obs_front_text,
+                                             sizeof(obs_front_text)),
+            App_ObstacleMotor_FrontSourceName(&obs_front),
             App_ObstacleMotor_FormatDistance(((lidar != NULL) && (lidar->ready != 0U)) ? lidar->left_valid : 0U,
                                              (lidar != NULL) ? lidar->left_min_mm : 0U,
                                              left_text,
@@ -349,7 +396,7 @@ void App_ObstacleMotor_Task(void)
     APP_LOG("APP OBS MOTOR: enabled=%u ground=%u speed=%d trimL=%d trimR=%d action=%s start_boost=%u forward_elapsed_ms=%lu left=%d right=%d%s",
             (unsigned int)APP_OBSTACLE_MOTOR_ENABLE,
             (unsigned int)APP_OBSTACLE_GROUND_TEST_ENABLE,
-            (int)configured_speed,
+            (int)action_speed,
             (int)APP_GROUND_LEFT_TRIM,
             (int)APP_GROUND_RIGHT_TRIM,
             App_ObstacleMotor_ActionName(action),
@@ -379,28 +426,65 @@ static void App_ObstacleMotor_ResetFrontHistory(void)
     app_front_block_history = 0U;
     app_front_clear_history = 0U;
     app_front_history_count = 0U;
+    app_obs_front_history_count = 0U;
+
+    for (uint8_t i = 0U; i < APP_OBS_GROUND_OBS_FRONT_HISTORY_SIZE; i++)
+    {
+        app_obs_front_history[i] = APP_OBS_MOTOR_INVALID_DISTANCE_MM;
+    }
 }
 
-static void App_ObstacleMotor_UpdateFrontHistory(const AppLidarStatus *lidar)
+static AppObstacleFrontDistance App_ObstacleMotor_SelectObstacleFront(const AppLidarStatus *lidar)
+{
+    AppObstacleFrontDistance obs_front = {0U, APP_OBS_MOTOR_INVALID_DISTANCE_MM, "none"};
+
+    if ((lidar == NULL) || (lidar->ready == 0U))
+    {
+        return obs_front;
+    }
+
+    if ((lidar->front_valid != 0U) &&
+        (lidar->front_min_mm != 0U) &&
+        (lidar->front_min_mm != APP_OBS_MOTOR_INVALID_DISTANCE_MM))
+    {
+        obs_front.valid = 1U;
+        obs_front.distance_mm = lidar->front_min_mm;
+        obs_front.source = "front";
+    }
+
+    if ((lidar->front_wide_valid != 0U) &&
+        (lidar->front_wide_min_mm != 0U) &&
+        (lidar->front_wide_min_mm != APP_OBS_MOTOR_INVALID_DISTANCE_MM) &&
+        ((obs_front.valid == 0U) || (lidar->front_wide_min_mm < obs_front.distance_mm)))
+    {
+        obs_front.valid = 1U;
+        obs_front.distance_mm = lidar->front_wide_min_mm;
+        obs_front.source = "front_wide";
+    }
+
+    return obs_front;
+}
+
+static void App_ObstacleMotor_UpdateFrontHistory(const AppObstacleFrontDistance *obs_front)
 {
     uint8_t block_sample = 0U;
     uint8_t clear_sample = 0U;
 
-    if ((lidar == NULL) || (lidar->ready == 0U))
+    if (obs_front == NULL)
     {
         App_ObstacleMotor_ResetFrontHistory();
         return;
     }
 
-    if (lidar->front_valid == 0U)
+    if (obs_front->valid == 0U)
     {
         clear_sample = 1U;
     }
-    else if (lidar->front_min_mm <= APP_OBS_GROUND_FRONT_BLOCK_MM)
+    else if (obs_front->distance_mm <= APP_OBS_GROUND_FRONT_BLOCK_MM)
     {
         block_sample = 1U;
     }
-    else if (lidar->front_min_mm >= APP_OBS_GROUND_FRONT_CLEAR_MM)
+    else if (obs_front->distance_mm >= APP_OBS_GROUND_FRONT_CLEAR_MM)
     {
         clear_sample = 1U;
     }
@@ -413,6 +497,24 @@ static void App_ObstacleMotor_UpdateFrontHistory(const AppLidarStatus *lidar)
     if (app_front_history_count < APP_OBS_GROUND_FRONT_HISTORY_SIZE)
     {
         app_front_history_count++;
+    }
+}
+
+static void App_ObstacleMotor_UpdateObsFrontTrend(const AppObstacleFrontDistance *obs_front)
+{
+    if ((obs_front == NULL) || (obs_front->valid == 0U))
+    {
+        app_obs_front_history_count = 0U;
+        return;
+    }
+
+    app_obs_front_history[0] = app_obs_front_history[1];
+    app_obs_front_history[1] = app_obs_front_history[2];
+    app_obs_front_history[2] = obs_front->distance_mm;
+
+    if (app_obs_front_history_count < APP_OBS_GROUND_OBS_FRONT_HISTORY_SIZE)
+    {
+        app_obs_front_history_count++;
     }
 }
 
@@ -438,6 +540,22 @@ static uint8_t App_ObstacleMotor_FrontConfirmedClear(void)
             APP_OBS_GROUND_FRONT_CONFIRM_COUNT) ? 1U : 0U;
 }
 
+static uint8_t App_ObstacleMotor_FrontApproaching(void)
+{
+    if (app_obs_front_history_count < APP_OBS_GROUND_OBS_FRONT_HISTORY_SIZE)
+    {
+        return 0U;
+    }
+
+    if (app_obs_front_history[2] >= APP_OBS_GROUND_APPROACHING_TURN_MM)
+    {
+        return 0U;
+    }
+
+    return ((app_obs_front_history[0] > app_obs_front_history[1]) &&
+            (app_obs_front_history[1] > app_obs_front_history[2])) ? 1U : 0U;
+}
+
 static uint8_t App_ObstacleMotor_CountHistoryBits(uint8_t value)
 {
     uint8_t count = 0U;
@@ -461,7 +579,9 @@ static uint8_t App_ObstacleMotor_StatusAllowsMotion(const AppLidarStatus *lidar)
     }
 
     if (((lidar->front_valid != 0U) &&
-         ((lidar->front_min_mm == 0U) || (lidar->front_min_mm == APP_OBS_MOTOR_INVALID_DISTANCE_MM))) ||
+          ((lidar->front_min_mm == 0U) || (lidar->front_min_mm == APP_OBS_MOTOR_INVALID_DISTANCE_MM))) ||
+        ((lidar->front_wide_valid != 0U) &&
+         ((lidar->front_wide_min_mm == 0U) || (lidar->front_wide_min_mm == APP_OBS_MOTOR_INVALID_DISTANCE_MM))) ||
         ((lidar->left_valid != 0U) &&
          ((lidar->left_min_mm == 0U) || (lidar->left_min_mm == APP_OBS_MOTOR_INVALID_DISTANCE_MM))) ||
         ((lidar->right_valid != 0U) &&
@@ -474,6 +594,7 @@ static uint8_t App_ObstacleMotor_StatusAllowsMotion(const AppLidarStatus *lidar)
 }
 
 static AppObstacleGroundState App_ObstacleMotor_UpdateGroundState(const AppLidarStatus *lidar,
+                                                                  const AppObstacleFrontDistance *obs_front,
                                                                   AppObstacleDecision decision,
                                                                   uint32_t now_ms,
                                                                   uint32_t *hold_ms,
@@ -481,6 +602,7 @@ static AppObstacleGroundState App_ObstacleMotor_UpdateGroundState(const AppLidar
 {
     AppObstacleGroundReason desired_reason = APP_OBS_GROUND_REASON_INIT;
     AppObstacleGroundState desired_state = App_ObstacleMotor_EvaluateGroundState(lidar,
+                                                                                 obs_front,
                                                                                  decision,
                                                                                  now_ms,
                                                                                  &desired_reason);
@@ -498,16 +620,34 @@ static AppObstacleGroundState App_ObstacleMotor_UpdateGroundState(const AppLidar
                            (desired_reason == APP_OBS_GROUND_REASON_FALLBACK_CHOOSE_LEFT) ||
                            (desired_reason == APP_OBS_GROUND_REASON_FALLBACK_CHOOSE_RIGHT) ||
                            (desired_reason == APP_OBS_GROUND_REASON_EMERGENCY_FRONT_TURN) ||
+                           (desired_reason == APP_OBS_GROUND_REASON_FRONT_APPROACHING_TURN) ||
                            (desired_reason == APP_OBS_GROUND_REASON_FRONT_CONFIRMED_BLOCK) ||
                            (desired_reason == APP_OBS_GROUND_REASON_FRONT_BLOCK_TURN) ||
                            (desired_reason == APP_OBS_GROUND_REASON_HARD_STOP_TURN)) ? 1U : 0U;
 
-    if ((opposite_turn != 0U) && (elapsed_ms < APP_OBS_GROUND_TURN_HOLD_MS))
+    if (opposite_turn != 0U)
     {
-        desired_state = app_ground_state;
-        desired_reason = (app_ground_state == APP_OBS_GROUND_TURN_LEFT) ?
-                         APP_OBS_GROUND_REASON_TURN_HOLD_MIN_KEEP_LEFT :
-                         APP_OBS_GROUND_REASON_TURN_HOLD_MIN_KEEP_RIGHT;
+        AppObstacleGroundReason switch_reason = APP_OBS_GROUND_REASON_INIT;
+
+        if (elapsed_ms < APP_OBS_GROUND_TURN_HOLD_MS)
+        {
+            desired_state = app_ground_state;
+            desired_reason = (app_ground_state == APP_OBS_GROUND_TURN_LEFT) ?
+                             APP_OBS_GROUND_REASON_TURN_HOLD_KEEP_LEFT :
+                             APP_OBS_GROUND_REASON_TURN_HOLD_KEEP_RIGHT;
+        }
+        else if (App_ObstacleMotor_TurnSwitchAllowed(lidar,
+                                                     app_ground_state,
+                                                     desired_state,
+                                                     &switch_reason) == 0U)
+        {
+            desired_state = app_ground_state;
+            desired_reason = switch_reason;
+        }
+        else
+        {
+            desired_reason = switch_reason;
+        }
     }
     else if ((bypass_hold == 0U) &&
              (desired_state != app_ground_state) &&
@@ -560,6 +700,7 @@ static AppObstacleGroundState App_ObstacleMotor_UpdateGroundState(const AppLidar
 }
 
 static AppObstacleGroundState App_ObstacleMotor_EvaluateGroundState(const AppLidarStatus *lidar,
+                                                                    const AppObstacleFrontDistance *obs_front,
                                                                     AppObstacleDecision decision,
                                                                     uint32_t now_ms,
                                                                     AppObstacleGroundReason *reason)
@@ -600,8 +741,9 @@ static AppObstacleGroundState App_ObstacleMotor_EvaluateGroundState(const AppLid
         goto done;
     }
 
-    front_contact = ((lidar->front_valid != 0U) &&
-                     (lidar->front_min_mm <= APP_OBS_GROUND_CONTACT_STOP_MM)) ? 1U : 0U;
+    front_contact = ((obs_front != NULL) &&
+                     (obs_front->valid != 0U) &&
+                     (obs_front->distance_mm <= APP_OBS_GROUND_CONTACT_STOP_MM)) ? 1U : 0U;
     all_sides_blocked = ((front_contact != 0U) &&
                          (App_ObstacleMotor_SideIsBlocked(lidar->left_valid, lidar->left_min_mm) != 0U) &&
                          (App_ObstacleMotor_SideIsBlocked(lidar->right_valid, lidar->right_min_mm) != 0U)) ? 1U : 0U;
@@ -670,9 +812,19 @@ static AppObstacleGroundState App_ObstacleMotor_EvaluateGroundState(const AppLid
         goto done;
     }
 
-    if ((lidar->front_valid != 0U) && (lidar->front_min_mm <= APP_OBS_GROUND_EMERGENCY_STOP_MM))
+    if ((obs_front != NULL) &&
+        (obs_front->valid != 0U) &&
+        (obs_front->distance_mm <= APP_OBS_GROUND_EMERGENCY_STOP_MM))
     {
         local_reason = APP_OBS_GROUND_REASON_EMERGENCY_FRONT_TURN;
+        state = App_ObstacleMotor_SelectTurnState(lidar, decision, NULL);
+        goto done;
+    }
+
+    if (((obs_front != NULL) && (obs_front->valid != 0U)) &&
+        (App_ObstacleMotor_FrontApproaching() != 0U))
+    {
+        local_reason = APP_OBS_GROUND_REASON_FRONT_APPROACHING_TURN;
         state = App_ObstacleMotor_SelectTurnState(lidar, decision, NULL);
         goto done;
     }
@@ -683,7 +835,8 @@ static AppObstacleGroundState App_ObstacleMotor_EvaluateGroundState(const AppLid
      * fallback turn unless a hard front safety threshold above already fired.
      */
     if ((decision == APP_OBS_DECISION_CLEAR_FORWARD) &&
-        ((lidar->front_valid == 0U) || (lidar->front_min_mm > APP_OBS_GROUND_FRONT_BLOCK_MM)))
+        ((obs_front == NULL) || (obs_front->valid == 0U) ||
+         (obs_front->distance_mm >= APP_OBS_GROUND_FRONT_CLEAR_MM)))
     {
         local_reason = APP_OBS_GROUND_REASON_CLEAR_FORWARD_RESUME;
         state = APP_OBS_GROUND_FORWARD;
@@ -691,7 +844,9 @@ static AppObstacleGroundState App_ObstacleMotor_EvaluateGroundState(const AppLid
     }
 
     if ((front_confirmed_blocked != 0U) ||
-        ((lidar->front_valid != 0U) && (lidar->front_min_mm <= APP_OBS_GROUND_FRONT_BLOCK_MM)))
+        ((obs_front != NULL) &&
+         (obs_front->valid != 0U) &&
+         (obs_front->distance_mm <= APP_OBS_GROUND_FRONT_BLOCK_MM)))
     {
         local_reason = (front_confirmed_blocked != 0U) ?
                        APP_OBS_GROUND_REASON_FRONT_CONFIRMED_BLOCK :
@@ -699,6 +854,17 @@ static AppObstacleGroundState App_ObstacleMotor_EvaluateGroundState(const AppLid
         state = App_ObstacleMotor_SelectTurnState(lidar,
                                                   decision,
                                                   (decision == APP_OBS_DECISION_CLEAR_FORWARD) ? NULL : &local_reason);
+        goto done;
+    }
+
+    if ((decision == APP_OBS_DECISION_CLEAR_FORWARD) &&
+        (obs_front != NULL) &&
+        (obs_front->valid != 0U) &&
+        (obs_front->distance_mm > APP_OBS_GROUND_FRONT_BLOCK_MM) &&
+        (obs_front->distance_mm < APP_OBS_GROUND_FRONT_CLEAR_MM))
+    {
+        local_reason = APP_OBS_GROUND_REASON_FRONT_CAUTION_FORWARD;
+        state = APP_OBS_GROUND_CAUTION;
         goto done;
     }
 
@@ -710,14 +876,16 @@ static AppObstacleGroundState App_ObstacleMotor_EvaluateGroundState(const AppLid
     }
 
     if ((app_front_history_count < APP_OBS_GROUND_FRONT_HISTORY_SIZE) &&
-        ((lidar->front_valid == 0U) || (lidar->front_min_mm >= APP_OBS_GROUND_FRONT_CLEAR_MM)))
+        ((obs_front == NULL) || (obs_front->valid == 0U) ||
+         (obs_front->distance_mm >= APP_OBS_GROUND_FRONT_CLEAR_MM)))
     {
         local_reason = APP_OBS_GROUND_REASON_FRONT_CLEAR_FORWARD;
         state = APP_OBS_GROUND_FORWARD;
         goto done;
     }
 
-    if (app_ground_state == APP_OBS_GROUND_FORWARD)
+    if ((app_ground_state == APP_OBS_GROUND_FORWARD) ||
+        (app_ground_state == APP_OBS_GROUND_CAUTION))
     {
         if (current_hold_ms >= APP_OBS_GROUND_FRONT_MID_HOLD_MAX_MS)
         {
@@ -920,6 +1088,76 @@ static AppObstacleGroundState App_ObstacleMotor_SelectTurnState(const AppLidarSt
     return APP_OBS_GROUND_TURN_RIGHT;
 }
 
+static uint8_t App_ObstacleMotor_TurnSwitchAllowed(const AppLidarStatus *lidar,
+                                                   AppObstacleGroundState current_state,
+                                                   AppObstacleGroundState desired_state,
+                                                   AppObstacleGroundReason *reason)
+{
+    uint32_t left_score = 0U;
+    uint32_t right_score = 0U;
+
+    if ((lidar == NULL) || (lidar->ready == 0U))
+    {
+        if (reason != NULL)
+        {
+            *reason = (current_state == APP_OBS_GROUND_TURN_LEFT) ?
+                      APP_OBS_GROUND_REASON_TURN_SWITCH_MARGIN_KEEP_LEFT :
+                      APP_OBS_GROUND_REASON_TURN_SWITCH_MARGIN_KEEP_RIGHT;
+        }
+
+        return 0U;
+    }
+
+    left_score = App_ObstacleMotor_SideScore(lidar->left_valid, lidar->left_min_mm);
+    right_score = App_ObstacleMotor_SideScore(lidar->right_valid, lidar->right_min_mm);
+
+    if ((current_state == APP_OBS_GROUND_TURN_LEFT) &&
+        (desired_state == APP_OBS_GROUND_TURN_RIGHT))
+    {
+        if ((right_score > left_score) &&
+            ((right_score - left_score) >= APP_OBS_GROUND_TURN_SWITCH_HYST_MM))
+        {
+            if (reason != NULL)
+            {
+                *reason = APP_OBS_GROUND_REASON_TURN_SWITCH_ALLOWED_RIGHT;
+            }
+
+            return 1U;
+        }
+
+        if (reason != NULL)
+        {
+            *reason = APP_OBS_GROUND_REASON_TURN_SWITCH_MARGIN_KEEP_LEFT;
+        }
+
+        return 0U;
+    }
+
+    if ((current_state == APP_OBS_GROUND_TURN_RIGHT) &&
+        (desired_state == APP_OBS_GROUND_TURN_LEFT))
+    {
+        if ((left_score > right_score) &&
+            ((left_score - right_score) >= APP_OBS_GROUND_TURN_SWITCH_HYST_MM))
+        {
+            if (reason != NULL)
+            {
+                *reason = APP_OBS_GROUND_REASON_TURN_SWITCH_ALLOWED_LEFT;
+            }
+
+            return 1U;
+        }
+
+        if (reason != NULL)
+        {
+            *reason = APP_OBS_GROUND_REASON_TURN_SWITCH_MARGIN_KEEP_RIGHT;
+        }
+
+        return 0U;
+    }
+
+    return 1U;
+}
+
 static AppObstacleGroundState App_ObstacleMotor_SelectBackupTurnState(const AppLidarStatus *lidar,
                                                                       AppObstacleGroundReason *reason)
 {
@@ -980,6 +1218,9 @@ static AppObstacleMotorAction App_ObstacleMotor_ActionFromGroundState(AppObstacl
         case APP_OBS_GROUND_FORWARD:
             return APP_OBS_MOTOR_ACTION_FORWARD_SLOW;
 
+        case APP_OBS_GROUND_CAUTION:
+            return APP_OBS_MOTOR_ACTION_FORWARD_CAUTION;
+
         case APP_OBS_GROUND_TURN_LEFT:
             return APP_OBS_MOTOR_ACTION_TURN_LEFT_SLOW;
 
@@ -996,6 +1237,27 @@ static AppObstacleMotorAction App_ObstacleMotor_ActionFromGroundState(AppObstacl
     }
 }
 
+static int16_t App_ObstacleMotor_ActionSpeed(AppObstacleMotorAction action, int16_t configured_speed)
+{
+    switch (action)
+    {
+        case APP_OBS_MOTOR_ACTION_FORWARD_CAUTION:
+            return APP_GROUND_CAUTION_SPEED;
+
+        case APP_OBS_MOTOR_ACTION_BACKUP_SLOW:
+            return APP_GROUND_BACKUP_SPEED;
+
+        case APP_OBS_MOTOR_ACTION_FORWARD_SLOW:
+        case APP_OBS_MOTOR_ACTION_TURN_LEFT_SLOW:
+        case APP_OBS_MOTOR_ACTION_TURN_RIGHT_SLOW:
+            return configured_speed;
+
+        case APP_OBS_MOTOR_ACTION_STOP:
+        default:
+            return 0;
+    }
+}
+
 static AppObstacleMotorCommand App_ObstacleMotor_CommandFromAction(AppObstacleMotorAction action,
                                                                     int16_t speed,
                                                                     uint8_t start_boost)
@@ -1007,9 +1269,10 @@ static AppObstacleMotorCommand App_ObstacleMotor_CommandFromAction(AppObstacleMo
     switch (action)
     {
         case APP_OBS_MOTOR_ACTION_FORWARD_SLOW:
+        case APP_OBS_MOTOR_ACTION_FORWARD_CAUTION:
             left_duty = (int32_t)speed + APP_GROUND_LEFT_TRIM;
             right_duty = (int32_t)speed + APP_GROUND_RIGHT_TRIM;
-            if (start_boost != 0U)
+            if ((action == APP_OBS_MOTOR_ACTION_FORWARD_SLOW) && (start_boost != 0U))
             {
                 left_duty += APP_GROUND_FORWARD_START_LEFT_EXTRA;
                 right_duty += APP_GROUND_FORWARD_START_RIGHT_EXTRA;
@@ -1030,8 +1293,8 @@ static AppObstacleMotorCommand App_ObstacleMotor_CommandFromAction(AppObstacleMo
             break;
 
         case APP_OBS_MOTOR_ACTION_BACKUP_SLOW:
-            command.left_duty = App_ObstacleMotor_ClampDuty((int32_t)-APP_GROUND_BACKUP_SPEED);
-            command.right_duty = App_ObstacleMotor_ClampDuty((int32_t)-APP_GROUND_BACKUP_SPEED);
+            command.left_duty = App_ObstacleMotor_ClampDuty((int32_t)-speed);
+            command.right_duty = App_ObstacleMotor_ClampDuty((int32_t)-speed);
             break;
 
         case APP_OBS_MOTOR_ACTION_STOP:
@@ -1050,6 +1313,9 @@ static const char *App_ObstacleMotor_ActionName(AppObstacleMotorAction action)
     {
         case APP_OBS_MOTOR_ACTION_FORWARD_SLOW:
             return "FORWARD_SLOW";
+
+        case APP_OBS_MOTOR_ACTION_FORWARD_CAUTION:
+            return "FORWARD_CAUTION";
 
         case APP_OBS_MOTOR_ACTION_TURN_LEFT_SLOW:
             return "TURN_LEFT_SLOW";
@@ -1072,6 +1338,9 @@ static const char *App_ObstacleMotor_GroundStateName(AppObstacleGroundState stat
     {
         case APP_OBS_GROUND_FORWARD:
             return "FORWARD";
+
+        case APP_OBS_GROUND_CAUTION:
+            return "CAUTION";
 
         case APP_OBS_GROUND_TURN_LEFT:
             return "TURN_LEFT";
@@ -1140,6 +1409,12 @@ static const char *App_ObstacleMotor_GroundReasonName(AppObstacleGroundReason re
         case APP_OBS_GROUND_REASON_FRONT_MID_TURN:
             return "front_mid_turn";
 
+        case APP_OBS_GROUND_REASON_FRONT_CAUTION_FORWARD:
+            return "front_caution_forward";
+
+        case APP_OBS_GROUND_REASON_FRONT_APPROACHING_TURN:
+            return "front_approaching_turn";
+
         case APP_OBS_GROUND_REASON_CONTACT_BACKUP:
             return "contact_backup";
 
@@ -1169,6 +1444,24 @@ static const char *App_ObstacleMotor_GroundReasonName(AppObstacleGroundReason re
 
         case APP_OBS_GROUND_REASON_STOP_BLOCKED_PRIORITY:
             return "stop_blocked_priority";
+
+        case APP_OBS_GROUND_REASON_TURN_HOLD_KEEP_LEFT:
+            return "turn_hold_keep_left";
+
+        case APP_OBS_GROUND_REASON_TURN_HOLD_KEEP_RIGHT:
+            return "turn_hold_keep_right";
+
+        case APP_OBS_GROUND_REASON_TURN_SWITCH_MARGIN_KEEP_LEFT:
+            return "turn_switch_margin_keep_left";
+
+        case APP_OBS_GROUND_REASON_TURN_SWITCH_MARGIN_KEEP_RIGHT:
+            return "turn_switch_margin_keep_right";
+
+        case APP_OBS_GROUND_REASON_TURN_SWITCH_ALLOWED_LEFT:
+            return "turn_switch_allowed_left";
+
+        case APP_OBS_GROUND_REASON_TURN_SWITCH_ALLOWED_RIGHT:
+            return "turn_switch_allowed_right";
 
         case APP_OBS_GROUND_REASON_TURN_HOLD_MIN_KEEP_LEFT:
             return "turn_hold_min_keep_left";
@@ -1229,6 +1522,16 @@ static const char *App_ObstacleMotor_LogSuffix(void)
 #endif
 }
 
+static const char *App_ObstacleMotor_FrontSourceName(const AppObstacleFrontDistance *obs_front)
+{
+    if ((obs_front == NULL) || (obs_front->source == NULL))
+    {
+        return "none";
+    }
+
+    return obs_front->source;
+}
+
 static const char *App_ObstacleMotor_FormatDistance(uint8_t valid,
                                                      uint16_t distance_mm,
                                                      char *buffer,
@@ -1254,6 +1557,7 @@ static uint32_t App_ObstacleMotor_StateHoldMs(AppObstacleGroundState state)
     switch (state)
     {
         case APP_OBS_GROUND_FORWARD:
+        case APP_OBS_GROUND_CAUTION:
             return APP_OBS_GROUND_FORWARD_HOLD_MS;
 
         case APP_OBS_GROUND_TURN_LEFT:
@@ -1322,6 +1626,7 @@ static void App_ObstacleMotor_ApplyAction(AppObstacleMotorAction action,
     switch (action)
     {
         case APP_OBS_MOTOR_ACTION_FORWARD_SLOW:
+        case APP_OBS_MOTOR_ACTION_FORWARD_CAUTION:
         case APP_OBS_MOTOR_ACTION_TURN_LEFT_SLOW:
         case APP_OBS_MOTOR_ACTION_TURN_RIGHT_SLOW:
         case APP_OBS_MOTOR_ACTION_BACKUP_SLOW:

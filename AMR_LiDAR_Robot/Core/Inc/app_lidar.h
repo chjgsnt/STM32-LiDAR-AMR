@@ -15,9 +15,11 @@ typedef struct
     uint32_t rx_bytes;
     uint32_t valid_points;
     uint16_t front_min_mm;
+    uint16_t front_wide_min_mm;
     uint16_t left_min_mm;
     uint16_t right_min_mm;
     uint8_t front_valid;
+    uint8_t front_wide_valid;
     uint8_t left_valid;
     uint8_t right_valid;
     float nearest_angle_deg;
@@ -25,7 +27,7 @@ typedef struct
 } AppLidarStatus;
 
 /*
- * front/left/right distance fields use 0xFFFF when the corresponding valid flag is 0.
+ * front/front_wide/left/right distance fields use 0xFFFF when the corresponding valid flag is 0.
  * nearest_distance_mm also uses 0xFFFF when no nearest reliable point was observed.
  * The returned pointer is owned by app_lidar and is updated by App_Lidar_Task().
  */
