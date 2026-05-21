@@ -1,12 +1,14 @@
 #ifndef APP_CONFIG_H
 #define APP_CONFIG_H
 
+#include "app_test_config.h"
+
 /*
- * Central bring-up test selector.
+ * Legacy bring-up test selector.
  *
- * Keep only one active test by default. Legacy APP_ENABLE_* macros can still
- * be overridden from compiler definitions, but the check below rejects
- * accidentally enabling more than one test at the same time.
+ * APP_ACTIVE_TEST is now derived from APP_ACTIVE_MODE in app_test_config.h.
+ * Keep this compatibility layer so the existing bring-up tasks can stay in
+ * place while test operators change only one macro.
  */
 #define APP_TEST_NONE                  0
 #define APP_TEST_MOTOR_PWM             1
@@ -16,49 +18,76 @@
 #define APP_TEST_HEADING_HOLD          5
 #define APP_TEST_LIDAR_BRINGUP         6
 
-#ifndef APP_ACTIVE_TEST
+#ifdef APP_ACTIVE_TEST
+#warning "APP_ACTIVE_TEST is derived from APP_ACTIVE_MODE; direct override ignored"
+#undef APP_ACTIVE_TEST
+#endif
+
+#if APP_MODE_IS_MOTOR_TEST
+#define APP_ACTIVE_TEST APP_TEST_MOTOR_PWM
+#elif APP_MODE_IS_LIDAR_OBSTACLE
 #define APP_ACTIVE_TEST APP_TEST_LIDAR_BRINGUP
+#else
+#define APP_ACTIVE_TEST APP_TEST_NONE
 #endif
 
 #if (APP_ACTIVE_TEST < APP_TEST_NONE) || (APP_ACTIVE_TEST > APP_TEST_LIDAR_BRINGUP)
 #error "APP_ACTIVE_TEST has an invalid value"
 #endif
 
-#ifndef APP_ENABLE_MOTOR_TEST
+#ifdef APP_ENABLE_MOTOR_TEST
+#warning "APP_ENABLE_MOTOR_TEST is derived from APP_ACTIVE_MODE; direct override ignored"
+#undef APP_ENABLE_MOTOR_TEST
+#endif
 #define APP_ENABLE_MOTOR_TEST (APP_ACTIVE_TEST == APP_TEST_MOTOR_PWM)
-#endif
 
-#ifndef APP_ENABLE_MOTOR_GPIO_STATIC_TEST
+#ifdef APP_ENABLE_MOTOR_GPIO_STATIC_TEST
+#warning "APP_ENABLE_MOTOR_GPIO_STATIC_TEST is derived from APP_ACTIVE_MODE; direct override ignored"
+#undef APP_ENABLE_MOTOR_GPIO_STATIC_TEST
+#endif
 #define APP_ENABLE_MOTOR_GPIO_STATIC_TEST 0
-#endif
 
-#ifndef APP_ENABLE_CHASSIS_OPENLOOP_TEST
+#ifdef APP_ENABLE_CHASSIS_OPENLOOP_TEST
+#warning "APP_ENABLE_CHASSIS_OPENLOOP_TEST is derived from APP_ACTIVE_MODE; direct override ignored"
+#undef APP_ENABLE_CHASSIS_OPENLOOP_TEST
+#endif
 #define APP_ENABLE_CHASSIS_OPENLOOP_TEST (APP_ACTIVE_TEST == APP_TEST_CHASSIS_OPENLOOP)
-#endif
 
-#ifndef APP_ENABLE_CHASSIS_DIRECTION_CAL_TEST
+#ifdef APP_ENABLE_CHASSIS_DIRECTION_CAL_TEST
+#warning "APP_ENABLE_CHASSIS_DIRECTION_CAL_TEST is derived from APP_ACTIVE_MODE; direct override ignored"
+#undef APP_ENABLE_CHASSIS_DIRECTION_CAL_TEST
+#endif
 #define APP_ENABLE_CHASSIS_DIRECTION_CAL_TEST 0
-#endif
 
-#ifndef APP_ENABLE_CHASSIS_GROUND_TRACTION_TEST
+#ifdef APP_ENABLE_CHASSIS_GROUND_TRACTION_TEST
+#warning "APP_ENABLE_CHASSIS_GROUND_TRACTION_TEST is derived from APP_ACTIVE_MODE; direct override ignored"
+#undef APP_ENABLE_CHASSIS_GROUND_TRACTION_TEST
+#endif
 #define APP_ENABLE_CHASSIS_GROUND_TRACTION_TEST 0
-#endif
 
-#ifndef APP_ENABLE_CHASSIS_SPEED_BALANCE_TEST
+#ifdef APP_ENABLE_CHASSIS_SPEED_BALANCE_TEST
+#warning "APP_ENABLE_CHASSIS_SPEED_BALANCE_TEST is derived from APP_ACTIVE_MODE; direct override ignored"
+#undef APP_ENABLE_CHASSIS_SPEED_BALANCE_TEST
+#endif
 #define APP_ENABLE_CHASSIS_SPEED_BALANCE_TEST (APP_ACTIVE_TEST == APP_TEST_CHASSIS_SPEED_BALANCE)
-#endif
 
-#ifndef APP_ENABLE_WHEEL_SPEED_PI_TEST
+#ifdef APP_ENABLE_WHEEL_SPEED_PI_TEST
+#warning "APP_ENABLE_WHEEL_SPEED_PI_TEST is derived from APP_ACTIVE_MODE; direct override ignored"
+#undef APP_ENABLE_WHEEL_SPEED_PI_TEST
+#endif
 #define APP_ENABLE_WHEEL_SPEED_PI_TEST (APP_ACTIVE_TEST == APP_TEST_WHEEL_SPEED_PI)
-#endif
 
-#ifndef APP_ENABLE_HEADING_HOLD_TEST
+#ifdef APP_ENABLE_HEADING_HOLD_TEST
+#warning "APP_ENABLE_HEADING_HOLD_TEST is derived from APP_ACTIVE_MODE; direct override ignored"
+#undef APP_ENABLE_HEADING_HOLD_TEST
+#endif
 #define APP_ENABLE_HEADING_HOLD_TEST (APP_ACTIVE_TEST == APP_TEST_HEADING_HOLD)
-#endif
 
-#ifndef APP_ENABLE_LIDAR_BRINGUP_TEST
-#define APP_ENABLE_LIDAR_BRINGUP_TEST (APP_ACTIVE_TEST == APP_TEST_LIDAR_BRINGUP)
+#ifdef APP_ENABLE_LIDAR_BRINGUP_TEST
+#warning "APP_ENABLE_LIDAR_BRINGUP_TEST is derived from APP_ACTIVE_MODE; direct override ignored"
+#undef APP_ENABLE_LIDAR_BRINGUP_TEST
 #endif
+#define APP_ENABLE_LIDAR_BRINGUP_TEST (APP_ACTIVE_TEST == APP_TEST_LIDAR_BRINGUP)
 
 #define APP_ENABLED_TEST_COUNT \
     (APP_ENABLE_MOTOR_GPIO_STATIC_TEST + \

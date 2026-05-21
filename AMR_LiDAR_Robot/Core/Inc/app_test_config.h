@@ -2,44 +2,68 @@
 #define APP_TEST_CONFIG_H
 
 /*
- * TEST OPERATOR SWITCH: LiDAR obstacle motor linkage.
+ * CENTRAL TEST/RUN MODE SELECTOR.
  *
- * Default MUST stay 0. With 0, the obstacle motor task is dry-run only and
- * must not call chassis or motor output functions.
+ * Change APP_ACTIVE_MODE only. The lower-level enable flags are derived from
+ * this selector so test builds do not require editing several independent
+ * macros.
  *
- * Change to 1 only for a temporary wheels-off-ground low-speed test after
- * confirming the robot is physically safe to run.
+ * Default MUST stay APP_MODE_LIDAR_OBSTACLE_DRY_RUN. In the default mode the
+ * obstacle logic prints decisions and motor commands, but it must not drive
+ * the wheels.
  *
- * Ground testing is not allowed until the wheels-off-ground test is completed.
- *
- * After testing, change this value back to 0.
- *
- * Do not commit or push an enabled=1 version to GitHub.
+ * Use APP_MODE_LIDAR_OBSTACLE_GROUND_TEST only for a supervised short ground
+ * test after the lifted-wheel test has passed. Keep the 3 second start delay,
+ * 10 second timeout, and emergency power access in place. Do not commit or
+ * push a ground-test active mode to GitHub.
  */
-#ifndef APP_OBSTACLE_MOTOR_ENABLE
-#define APP_OBSTACLE_MOTOR_ENABLE 1
+#define APP_MODE_LIDAR_OBSTACLE_DRY_RUN     0
+#define APP_MODE_LIDAR_OBSTACLE_GROUND_TEST 1
+#define APP_MODE_MOTOR_TEST                 2
+#define APP_MODE_IMU_TEST                   3
+#define APP_MODE_SENSOR_BRINGUP             4
+
+#ifndef APP_ACTIVE_MODE
+#define APP_ACTIVE_MODE APP_MODE_LIDAR_OBSTACLE_DRY_RUN
 #endif
 
-/*
- * TEST OPERATOR SWITCH: short ground test permission.
- *
- * Default MUST stay 0. Set to 1 only after the wheels-off-ground motor linkage
- * test has passed and the robot is placed in a safe ground-test area.
- *
- * Real motor output is allowed only when BOTH switches are 1:
- *   APP_OBSTACLE_MOTOR_ENABLE == 1
- *   APP_OBSTACLE_GROUND_TEST_ENABLE == 1
- *
- * The ground test still enforces a 3 second startup delay and a 10 second
- * maximum run window before forcing STOP.
- *
- * After testing, change this value back to 0.
- *
- * Do not commit or push a ground=1 version to GitHub.
- */
-#ifndef APP_OBSTACLE_GROUND_TEST_ENABLE
-#define APP_OBSTACLE_GROUND_TEST_ENABLE 1
+#if (APP_ACTIVE_MODE < APP_MODE_LIDAR_OBSTACLE_DRY_RUN) || (APP_ACTIVE_MODE > APP_MODE_SENSOR_BRINGUP)
+#error "APP_ACTIVE_MODE has an invalid value"
 #endif
+
+#define APP_MODE_IS_LIDAR_OBSTACLE_DRY_RUN     (APP_ACTIVE_MODE == APP_MODE_LIDAR_OBSTACLE_DRY_RUN)
+#define APP_MODE_IS_LIDAR_OBSTACLE_GROUND_TEST (APP_ACTIVE_MODE == APP_MODE_LIDAR_OBSTACLE_GROUND_TEST)
+#define APP_MODE_IS_LIDAR_OBSTACLE             (APP_MODE_IS_LIDAR_OBSTACLE_DRY_RUN || APP_MODE_IS_LIDAR_OBSTACLE_GROUND_TEST)
+#define APP_MODE_IS_MOTOR_TEST                 (APP_ACTIVE_MODE == APP_MODE_MOTOR_TEST)
+#define APP_MODE_IS_IMU_TEST                   (APP_ACTIVE_MODE == APP_MODE_IMU_TEST)
+#define APP_MODE_IS_SENSOR_BRINGUP             (APP_ACTIVE_MODE == APP_MODE_SENSOR_BRINGUP)
+
+/*
+ * Derived mode flags. Do not edit these directly.
+ */
+#define APP_LIDAR_OBSTACLE_DRY_RUN_ENABLE     APP_MODE_IS_LIDAR_OBSTACLE_DRY_RUN
+#define APP_LIDAR_OBSTACLE_GROUND_TEST_ENABLE APP_MODE_IS_LIDAR_OBSTACLE_GROUND_TEST
+#define APP_TEST_MODE_ENABLE_MOTOR_TEST       APP_MODE_IS_MOTOR_TEST
+#define APP_TEST_MODE_ENABLE_IMU_TEST         APP_MODE_IS_IMU_TEST
+#define APP_TEST_MODE_ENABLE_SENSOR_BRINGUP   APP_MODE_IS_SENSOR_BRINGUP
+
+/*
+ * Legacy obstacle motor switches are intentionally derived from APP_ACTIVE_MODE.
+ * CLEAR SAFETY RULE:
+ *   dry-run mode     -> enabled=0, ground=0, no wheel output
+ *   ground-test mode -> enabled=1, ground=1, guarded low-speed output allowed
+ */
+#ifdef APP_OBSTACLE_MOTOR_ENABLE
+#warning "APP_OBSTACLE_MOTOR_ENABLE is derived from APP_ACTIVE_MODE; direct override ignored"
+#undef APP_OBSTACLE_MOTOR_ENABLE
+#endif
+#define APP_OBSTACLE_MOTOR_ENABLE APP_MODE_IS_LIDAR_OBSTACLE_GROUND_TEST
+
+#ifdef APP_OBSTACLE_GROUND_TEST_ENABLE
+#warning "APP_OBSTACLE_GROUND_TEST_ENABLE is derived from APP_ACTIVE_MODE; direct override ignored"
+#undef APP_OBSTACLE_GROUND_TEST_ENABLE
+#endif
+#define APP_OBSTACLE_GROUND_TEST_ENABLE APP_MODE_IS_LIDAR_OBSTACLE_GROUND_TEST
 
 /*
  * TEST OPERATOR SPEED SETTINGS.
@@ -186,12 +210,8 @@
 #define APP_GROUND_MOTOR_MAX_ABS 650
 #endif
 
-#if APP_OBSTACLE_MOTOR_ENABLE
-#warning "APP_OBSTACLE_MOTOR_ENABLE is ON: lift wheels before testing"
-#endif
-
-#if APP_OBSTACLE_GROUND_TEST_ENABLE
-#warning "APP_OBSTACLE_GROUND_TEST_ENABLE is ON: 3s start delay, 10s max run"
+#if APP_MODE_IS_LIDAR_OBSTACLE_GROUND_TEST
+#warning "APP_ACTIVE_MODE is LiDAR obstacle GROUND TEST: lift wheels first, 3s start delay, 10s max run"
 #endif
 
 #endif /* APP_TEST_CONFIG_H */

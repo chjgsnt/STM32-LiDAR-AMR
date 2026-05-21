@@ -193,6 +193,7 @@ static uint32_t App_FixedWhole(int32_t value, int32_t decimal_scale);
 static uint32_t App_FixedFraction(int32_t value, int32_t decimal_scale);
 static void App_LogImuStatus(void);
 static void App_LogI2cBaseline(void);
+static const char *App_GetActiveModeName(void);
 static const char *App_GetActiveTestName(void);
 #if APP_ENABLE_I2C_BUS_RECOVERY
 static void App_RecoverI2cBus(void);
@@ -479,6 +480,7 @@ void StartTask04(void *argument)
 void StartTask05(void *argument)
 {
   /* USER CODE BEGIN StartTask05 */
+  APP_LOG("[APP] active_mode=%s", App_GetActiveModeName());
   APP_LOG("[APP] active_test=%s", App_GetActiveTestName());
 
 #if APP_ENABLE_MOTOR_GPIO_STATIC_TEST
@@ -498,7 +500,11 @@ void StartTask05(void *argument)
 #elif APP_ENABLE_HEADING_HOLD_TEST
   App_RunHeadingHoldTest();
 #elif APP_ENABLE_LIDAR_BRINGUP_TEST
-  APP_LOG("[APP] LiDAR bring-up mode: motor motion tests disabled");
+#if APP_LIDAR_OBSTACLE_GROUND_TEST_ENABLE
+  APP_LOG("[APP] LiDAR obstacle ground-test mode: guarded low-speed motor output enabled");
+#else
+  APP_LOG("[APP] LiDAR obstacle dry-run mode: motor output disabled");
+#endif
 #endif
 
   /* Infinite loop */
@@ -582,6 +588,23 @@ static void App_LogI2cBaseline(void)
           (unsigned int)HAL_GPIO_ReadPin(I2C_BASELINE_SDA_GPIO_PORT, I2C_BASELINE_SDA_PIN));
   APP_LOG("[I2C_BASELINE] hi2c1.State=0x%02X", (unsigned int)hi2c1.State);
   APP_LOG("[I2C_BASELINE] hi2c1.ErrorCode=0x%08lX", (unsigned long)hi2c1.ErrorCode);
+}
+
+static const char *App_GetActiveModeName(void)
+{
+#if APP_ACTIVE_MODE == APP_MODE_LIDAR_OBSTACLE_DRY_RUN
+  return "LiDAR obstacle dry-run";
+#elif APP_ACTIVE_MODE == APP_MODE_LIDAR_OBSTACLE_GROUND_TEST
+  return "LiDAR obstacle ground-test";
+#elif APP_ACTIVE_MODE == APP_MODE_MOTOR_TEST
+  return "motor test";
+#elif APP_ACTIVE_MODE == APP_MODE_IMU_TEST
+  return "IMU test";
+#elif APP_ACTIVE_MODE == APP_MODE_SENSOR_BRINGUP
+  return "sensor bring-up";
+#else
+  return "unknown";
+#endif
 }
 
 static const char *App_GetActiveTestName(void)
