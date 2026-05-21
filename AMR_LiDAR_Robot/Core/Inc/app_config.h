@@ -60,6 +60,16 @@
 #define APP_ENABLE_LIDAR_BRINGUP_TEST (APP_ACTIVE_TEST == APP_TEST_LIDAR_BRINGUP)
 #endif
 
+/*
+ * Experimental LiDAR obstacle motor linkage.
+ *
+ * Keep this disabled by default: when 0, the obstacle motor task only logs the
+ * action it would take and never calls chassis or motor control functions.
+ */
+#ifndef APP_OBSTACLE_MOTOR_ENABLE
+#define APP_OBSTACLE_MOTOR_ENABLE 0
+#endif
+
 #define APP_ENABLED_TEST_COUNT \
     (APP_ENABLE_MOTOR_GPIO_STATIC_TEST + \
      APP_ENABLE_MOTOR_TEST + \

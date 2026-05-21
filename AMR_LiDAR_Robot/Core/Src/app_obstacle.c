@@ -30,14 +30,6 @@ void App_Obstacle_Task(void)
 {
     static uint32_t last_log_ms = 0U;
     uint32_t now_ms = HAL_GetTick();
-
-    if ((now_ms - last_log_ms) < APP_OBS_LOG_INTERVAL_MS)
-    {
-        return;
-    }
-
-    last_log_ms = now_ms;
-
     const AppLidarStatus *lidar = App_Lidar_GetStatus();
     uint8_t front_valid = 0U;
     uint8_t left_valid = 0U;
@@ -50,6 +42,13 @@ void App_Obstacle_Task(void)
     char right_text[16];
 
     app_obstacle_decision = App_Obstacle_Evaluate(lidar);
+
+    if ((now_ms - last_log_ms) < APP_OBS_LOG_INTERVAL_MS)
+    {
+        return;
+    }
+
+    last_log_ms = now_ms;
 
     if ((lidar != NULL) && (lidar->ready != 0U))
     {

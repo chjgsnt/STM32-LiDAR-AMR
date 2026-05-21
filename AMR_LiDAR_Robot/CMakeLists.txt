@@ -50,6 +50,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user sources here
     Core/Src/app_lidar.c
     Core/Src/app_obstacle.c
+    Core/Src/app_obstacle_motor.c
     Core/Src/bringup_log.c
     Core/Src/chassis.c
     Core/Src/i2c_scan.c
