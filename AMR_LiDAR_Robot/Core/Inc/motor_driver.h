@@ -9,7 +9,7 @@ extern "C" {
 
 #define MOTOR_DRIVER_DUTY_MIN (-1000)
 #define MOTOR_DRIVER_DUTY_MAX (1000)
-#define MOTOR_DRIVER_BRINGUP_DUTY_LIMIT (300)
+#define MOTOR_DRIVER_BRINGUP_DUTY_LIMIT (600)
 
 void MotorDriver_Init(void);
 void MotorDriver_StopAll(void);

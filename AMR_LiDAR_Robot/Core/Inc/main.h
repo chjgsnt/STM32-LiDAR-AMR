@@ -31,6 +31,7 @@ extern "C" {
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "app_config.h"
 
 /* USER CODE END Includes */
 
@@ -73,42 +74,6 @@ void Error_Handler(void);
 #define SWO_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
-#ifndef APP_ENABLE_MOTOR_TEST
-#define APP_ENABLE_MOTOR_TEST 0
-#endif
-
-#ifndef APP_ENABLE_MOTOR_GPIO_STATIC_TEST
-#define APP_ENABLE_MOTOR_GPIO_STATIC_TEST 0
-#endif
-
-#ifndef APP_ENABLE_CHASSIS_OPENLOOP_TEST
-#define APP_ENABLE_CHASSIS_OPENLOOP_TEST 0
-#endif
-
-#ifndef APP_ENABLE_CHASSIS_DIRECTION_CAL_TEST
-#define APP_ENABLE_CHASSIS_DIRECTION_CAL_TEST 0
-#endif
-
-#ifndef APP_ENABLE_CHASSIS_GROUND_TRACTION_TEST
-#define APP_ENABLE_CHASSIS_GROUND_TRACTION_TEST 0
-#endif
-
-#ifndef APP_ENABLE_CHASSIS_SPEED_BALANCE_TEST
-#define APP_ENABLE_CHASSIS_SPEED_BALANCE_TEST 0
-#endif
-
-#ifndef APP_ENABLE_WHEEL_SPEED_PI_TEST
-#define APP_ENABLE_WHEEL_SPEED_PI_TEST 0
-#endif
-
-#ifndef APP_ENABLE_HEADING_HOLD_TEST
-#define APP_ENABLE_HEADING_HOLD_TEST 1
-#endif
-
-#ifndef APP_ENABLE_I2C_BUS_RECOVERY
-#define APP_ENABLE_I2C_BUS_RECOVERY 1
-#endif
-
 /* USER CODE END Private defines */
 
 #ifdef __cplusplus

@@ -1,5 +1,6 @@
 #include "i2c_scan.h"
 
+#include "app_config.h"
 #include "bringup_log.h"
 
 #include "i2c.h"
@@ -433,7 +434,9 @@ static void I2C_RunOledDisplayTest(uint8_t addr)
 {
     if (SSD1306_Init(&hi2c1, addr) == false)
     {
+#if APP_I2C_SCAN_VERBOSE
         LOG_INFO("OLED SSD1306 init failed at 0x%02X.", addr);
+#endif
         return;
     }
 
@@ -443,11 +446,15 @@ static void I2C_RunOledDisplayTest(uint8_t addr)
 
     if (SSD1306_UpdateScreen() == true)
     {
+#if APP_I2C_SCAN_VERBOSE
         LOG_INFO("OLED display test written at 0x%02X.", addr);
+#endif
     }
     else
     {
+#if APP_I2C_SCAN_VERBOSE
         LOG_INFO("OLED display update failed at 0x%02X.", addr);
+#endif
     }
 }
 
@@ -460,11 +467,18 @@ void I2C_ScanBus(void)
     GPIO_PinState scl_level = HAL_GPIO_ReadPin(I2C1_SCL_GPIO_PORT, I2C1_SCL_PIN);
     GPIO_PinState sda_level = HAL_GPIO_ReadPin(I2C1_SDA_GPIO_PORT, I2C1_SDA_PIN);
 
+#if !APP_I2C_SCAN_VERBOSE
+    (void)i2c_state;
+    (void)i2c_error;
+#endif
+
     LOG_INFO("I2C scan started.");
+#if APP_I2C_SCAN_VERBOSE
     LOG_INFO("I2C1 state before scan: 0x%02X.", (unsigned int)i2c_state);
     LOG_INFO("I2C1 error before scan: 0x%08lX.", (unsigned long)i2c_error);
     LOG_INFO("I2C1 SCL pin: PB8.");
     LOG_INFO("I2C1 SDA pin: PB9.");
+#endif
     LOG_INFO("I2C1 SCL level before scan: %u.", (unsigned int)scl_level);
     LOG_INFO("I2C1 SDA level before scan: %u.", (unsigned int)sda_level);
 
@@ -478,7 +492,9 @@ void I2C_ScanBus(void)
 
             if ((addr == 0x3CU) || (addr == 0x3DU))
             {
+#if APP_I2C_SCAN_VERBOSE
                 LOG_INFO("OLED found at 0x%02X.", addr);
+#endif
                 oled_found = true;
 
                 if (addr == SSD1306_I2C_ADDR_7BIT)
@@ -491,31 +507,46 @@ void I2C_ScanBus(void)
         }
         else if (status == HAL_BUSY)
         {
+#if APP_I2C_SCAN_VERBOSE
             LOG_INFO("I2C HAL_BUSY at 0x%02X, error=0x%08lX.", addr, (unsigned long)HAL_I2C_GetError(&hi2c1));
+#endif
         }
         else if (status == HAL_TIMEOUT)
         {
+#if APP_I2C_SCAN_VERBOSE
             LOG_INFO("I2C HAL_TIMEOUT at 0x%02X, error=0x%08lX.", addr, (unsigned long)HAL_I2C_GetError(&hi2c1));
+#endif
         }
         else if (status == HAL_ERROR)
         {
+#if APP_I2C_SCAN_VERBOSE
             LOG_INFO("I2C HAL_ERROR at 0x%02X, error=0x%08lX.", addr, (unsigned long)HAL_I2C_GetError(&hi2c1));
+#endif
         }
         else
         {
+#if APP_I2C_SCAN_VERBOSE
             LOG_INFO("I2C status=%u at 0x%02X, error=0x%08lX.", (unsigned int)status, addr, (unsigned long)HAL_I2C_GetError(&hi2c1));
+#endif
         }
     }
 
     if (found_count == 0U)
     {
+#if APP_I2C_SCAN_VERBOSE
         LOG_INFO("No I2C devices found.");
+#endif
     }
 
     if (oled_found == false)
     {
+#if APP_I2C_SCAN_VERBOSE
         LOG_INFO("OLED not found.");
+#endif
     }
 
+    LOG_INFO("I2C scan result: devices=%u, oled=%u.",
+             (unsigned int)found_count,
+             oled_found ? 1U : 0U);
     LOG_INFO("I2C scan finished.");
 }

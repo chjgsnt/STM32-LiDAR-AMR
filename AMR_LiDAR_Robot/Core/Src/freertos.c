@@ -25,6 +25,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "app_lidar.h"
 #include "bringup_log.h"
 #include "i2c.h"
 #include "i2c_scan.h"
@@ -190,6 +191,7 @@ static uint32_t App_FixedWhole(int32_t value, int32_t decimal_scale);
 static uint32_t App_FixedFraction(int32_t value, int32_t decimal_scale);
 static void App_LogImuStatus(void);
 static void App_LogI2cBaseline(void);
+static const char *App_GetActiveTestName(void);
 #if APP_ENABLE_I2C_BUS_RECOVERY
 static void App_RecoverI2cBus(void);
 static void App_InitI2cRecoveryGpio(void);
@@ -316,7 +318,7 @@ void MX_FREERTOS_Init(void) {
   /* USER CODE END Init */
 
   /* USER CODE BEGIN RTOS_MUTEX */
-  /* add mutexes, ... */
+  App_LogInit();
   /* USER CODE END RTOS_MUTEX */
 
   /* USER CODE BEGIN RTOS_SEMAPHORES */
@@ -368,7 +370,9 @@ void StartDefaultTask(void *argument)
 {
   /* USER CODE BEGIN StartDefaultTask */
   LOG_INFO("FreeRTOS started.");
+#if APP_ENABLE_I2C_BASELINE_DEBUG
   App_LogI2cBaseline();
+#endif
 #if APP_ENABLE_I2C_BUS_RECOVERY
   App_RecoverI2cBus();
 #endif
@@ -406,10 +410,19 @@ void StartDefaultTask(void *argument)
 void StartTask02(void *argument)
 {
   /* USER CODE BEGIN StartTask02 */
+#if APP_ENABLE_LIDAR_BRINGUP_TEST
+  App_Lidar_Init();
+#endif
+
   /* Infinite loop */
   for(;;)
   {
-    osDelay(1);
+#if APP_ENABLE_LIDAR_BRINGUP_TEST
+    App_Lidar_Task();
+    osDelay(50);
+#else
+    osDelay(1000);
+#endif
   }
   /* USER CODE END StartTask02 */
 }
@@ -460,6 +473,8 @@ void StartTask04(void *argument)
 void StartTask05(void *argument)
 {
   /* USER CODE BEGIN StartTask05 */
+  APP_LOG("[APP] active_test=%s", App_GetActiveTestName());
+
 #if APP_ENABLE_MOTOR_GPIO_STATIC_TEST
   App_RunMotorGpioStaticTest();
 #elif APP_ENABLE_MOTOR_TEST
@@ -476,6 +491,8 @@ void StartTask05(void *argument)
   App_RunWheelSpeedPiTest();
 #elif APP_ENABLE_HEADING_HOLD_TEST
   App_RunHeadingHoldTest();
+#elif APP_ENABLE_LIDAR_BRINGUP_TEST
+  APP_LOG("[APP] LiDAR bring-up mode: motor motion tests disabled");
 #endif
 
   /* Infinite loop */
@@ -552,13 +569,34 @@ static void App_LogImuStatus(void)
 
 static void App_LogI2cBaseline(void)
 {
-  printf("[I2C_BASELINE] debug start\r\n");
-  printf("[I2C_BASELINE] PB8/SCL level=%u\r\n",
-         (unsigned int)HAL_GPIO_ReadPin(I2C_BASELINE_SCL_GPIO_PORT, I2C_BASELINE_SCL_PIN));
-  printf("[I2C_BASELINE] PB9/SDA level=%u\r\n",
-         (unsigned int)HAL_GPIO_ReadPin(I2C_BASELINE_SDA_GPIO_PORT, I2C_BASELINE_SDA_PIN));
-  printf("[I2C_BASELINE] hi2c1.State=0x%02X\r\n", (unsigned int)hi2c1.State);
-  printf("[I2C_BASELINE] hi2c1.ErrorCode=0x%08lX\r\n", (unsigned long)hi2c1.ErrorCode);
+  APP_LOG("[I2C_BASELINE] debug start");
+  APP_LOG("[I2C_BASELINE] PB8/SCL level=%u",
+          (unsigned int)HAL_GPIO_ReadPin(I2C_BASELINE_SCL_GPIO_PORT, I2C_BASELINE_SCL_PIN));
+  APP_LOG("[I2C_BASELINE] PB9/SDA level=%u",
+          (unsigned int)HAL_GPIO_ReadPin(I2C_BASELINE_SDA_GPIO_PORT, I2C_BASELINE_SDA_PIN));
+  APP_LOG("[I2C_BASELINE] hi2c1.State=0x%02X", (unsigned int)hi2c1.State);
+  APP_LOG("[I2C_BASELINE] hi2c1.ErrorCode=0x%08lX", (unsigned long)hi2c1.ErrorCode);
+}
+
+static const char *App_GetActiveTestName(void)
+{
+#if APP_ACTIVE_TEST == APP_TEST_NONE
+  return "none";
+#elif APP_ACTIVE_TEST == APP_TEST_MOTOR_PWM
+  return "motor PWM";
+#elif APP_ACTIVE_TEST == APP_TEST_CHASSIS_OPENLOOP
+  return "chassis open-loop";
+#elif APP_ACTIVE_TEST == APP_TEST_CHASSIS_SPEED_BALANCE
+  return "chassis speed balance";
+#elif APP_ACTIVE_TEST == APP_TEST_WHEEL_SPEED_PI
+  return "wheel speed PI";
+#elif APP_ACTIVE_TEST == APP_TEST_HEADING_HOLD
+  return "heading hold";
+#elif APP_ACTIVE_TEST == APP_TEST_LIDAR_BRINGUP
+  return "LiDAR bring-up";
+#else
+  return "unknown";
+#endif
 }
 
 #if APP_ENABLE_I2C_BUS_RECOVERY
@@ -567,9 +605,9 @@ static void App_RecoverI2cBus(void)
   GPIO_PinState before_scl = App_ReadI2cScl();
   GPIO_PinState before_sda = App_ReadI2cSda();
 
-  printf("[I2C_RECOVERY] before SCL=%u SDA=%u\r\n",
-         (unsigned int)before_scl,
-         (unsigned int)before_sda);
+  APP_LOG("[I2C_RECOVERY] before SCL=%u SDA=%u",
+          (unsigned int)before_scl,
+          (unsigned int)before_sda);
 
   (void)HAL_I2C_DeInit(&hi2c1);
   App_InitI2cRecoveryGpio();
@@ -596,9 +634,9 @@ static void App_RecoverI2cBus(void)
   HAL_GPIO_WritePin(I2C_BASELINE_SDA_GPIO_PORT, I2C_BASELINE_SDA_PIN, GPIO_PIN_SET);
   osDelay(1);
 
-  printf("[I2C_RECOVERY] after SCL=%u SDA=%u\r\n",
-         (unsigned int)App_ReadI2cScl(),
-         (unsigned int)App_ReadI2cSda());
+  APP_LOG("[I2C_RECOVERY] after SCL=%u SDA=%u",
+          (unsigned int)App_ReadI2cScl(),
+          (unsigned int)App_ReadI2cSda());
 
   MX_I2C1_Init();
 }
@@ -630,7 +668,7 @@ static GPIO_PinState App_ReadI2cSda(void)
 #if APP_ENABLE_MOTOR_TEST && !APP_ENABLE_MOTOR_GPIO_STATIC_TEST
 static void App_RunMotorBringupTest(void)
 {
-  printf("[MOTOR] PWM test start\r\n");
+  APP_LOG("[MOTOR] PWM test start");
 
   MotorDriver_Init();
 
@@ -641,7 +679,7 @@ static void App_RunMotorBringupTest(void)
 
   MotorDriver_StopAll();
 
-  printf("[MOTOR] PWM test done\r\n");
+  APP_LOG("[MOTOR] PWM test done");
 }
 
 static void App_RunMotorPhase(const char *phase, int16_t duty, uint8_t motor_index)
@@ -678,17 +716,17 @@ static void App_LogMotorPwmStatus(const char *phase, int16_t duty)
     pwm_percent = (App_GetMaxTim3Ccr() * 100U) / period_counts;
   }
 
-  printf("[MOTOR] %s duty=%d ARR=%lu CCR1=%lu CCR2=%lu CCR3=%lu CCR4=%lu pwm=%lu%% encA=%ld encB=%ld\r\n",
-         phase,
-         (int)duty,
-         (unsigned long)TIM3->ARR,
-         (unsigned long)TIM3->CCR1,
-         (unsigned long)TIM3->CCR2,
-         (unsigned long)TIM3->CCR3,
-         (unsigned long)TIM3->CCR4,
-         (unsigned long)pwm_percent,
-         (long)MotorDriver_GetEncoderA(),
-         (long)MotorDriver_GetEncoderB());
+  APP_LOG("[MOTOR] %s duty=%d ARR=%lu CCR1=%lu CCR2=%lu CCR3=%lu CCR4=%lu pwm=%lu%% encA=%ld encB=%ld",
+          phase,
+          (int)duty,
+          (unsigned long)TIM3->ARR,
+          (unsigned long)TIM3->CCR1,
+          (unsigned long)TIM3->CCR2,
+          (unsigned long)TIM3->CCR3,
+          (unsigned long)TIM3->CCR4,
+          (unsigned long)pwm_percent,
+          (long)MotorDriver_GetEncoderA(),
+          (long)MotorDriver_GetEncoderB());
 }
 
 static uint32_t App_GetMaxTim3Ccr(void)
@@ -717,7 +755,7 @@ static uint32_t App_GetMaxTim3Ccr(void)
 #if APP_ENABLE_CHASSIS_OPENLOOP_TEST
 static void App_RunChassisOpenLoopTest(void)
 {
-  printf("[CHASSIS] open-loop test start\r\n");
+  APP_LOG("[CHASSIS] open-loop test start");
 
   Chassis_Init();
   Chassis_Stop();
@@ -754,7 +792,7 @@ static void App_RunChassisOpenLoopTest(void)
                       Chassis_TurnRight);
   Chassis_Stop();
 
-  printf("[CHASSIS] open-loop test done\r\n");
+  APP_LOG("[CHASSIS] open-loop test done");
 }
 
 static void App_RunChassisPhase(const char *action,
@@ -777,12 +815,12 @@ static void App_RunChassisPhase(const char *action,
 
 static void App_LogChassisStatus(const char *action, int16_t left_duty, int16_t right_duty)
 {
-  printf("[CHASSIS] action=%s left_duty=%d right_duty=%d encA=%ld encB=%ld\r\n",
-         action,
-         (int)left_duty,
-         (int)right_duty,
-         (long)MotorDriver_GetEncoderA(),
-         (long)MotorDriver_GetEncoderB());
+  APP_LOG("[CHASSIS] action=%s left_duty=%d right_duty=%d encA=%ld encB=%ld",
+          action,
+          (int)left_duty,
+          (int)right_duty,
+          (long)MotorDriver_GetEncoderA(),
+          (long)MotorDriver_GetEncoderB());
 }
 #endif
 
@@ -808,7 +846,7 @@ static void App_RunChassisDirectionCalTest(void)
   App_RunChassisDirectionCalPhase("Right-300", 0, -CHASSIS_CAL_DUTY);
   Chassis_Stop();
 
-  printf("[CHASSIS_CAL] done\r\n");
+  APP_LOG("[CHASSIS_CAL] done");
 }
 
 static void App_RunChassisDirectionCalPhase(const char *action, int16_t left_duty, int16_t right_duty)
@@ -827,19 +865,19 @@ static void App_RunChassisDirectionCalPhase(const char *action, int16_t left_dut
 
 static void App_LogChassisDirectionCalStatus(const char *action, int16_t left_duty, int16_t right_duty)
 {
-  printf("[CHASSIS_CAL] action=%s left_duty=%d right_duty=%d encA=%ld encB=%ld\r\n",
-         action,
-         (int)left_duty,
-         (int)right_duty,
-         (long)MotorDriver_GetEncoderA(),
-         (long)MotorDriver_GetEncoderB());
+  APP_LOG("[CHASSIS_CAL] action=%s left_duty=%d right_duty=%d encA=%ld encB=%ld",
+          action,
+          (int)left_duty,
+          (int)right_duty,
+          (long)MotorDriver_GetEncoderA(),
+          (long)MotorDriver_GetEncoderB());
 }
 #endif
 
 #if APP_ENABLE_CHASSIS_GROUND_TRACTION_TEST
 static void App_RunChassisGroundTractionTest(void)
 {
-  printf("[CHASSIS_GROUND] traction test start\r\n");
+  APP_LOG("[CHASSIS_GROUND] traction test start");
 
   Chassis_Init();
   Chassis_Stop();
@@ -860,7 +898,7 @@ static void App_RunChassisGroundTractionTest(void)
   App_RunChassisGroundTractionPhase(CHASSIS_MAX_OPENLOOP_DUTY);
   Chassis_Stop();
 
-  printf("[CHASSIS_GROUND] traction test done\r\n");
+  APP_LOG("[CHASSIS_GROUND] traction test done");
 }
 
 static void App_RunChassisGroundTractionPhase(int16_t duty)
@@ -896,19 +934,19 @@ static void App_LogChassisGroundTractionStatus(int16_t duty,
                                                int32_t delta_a,
                                                int32_t delta_b)
 {
-  printf("[CHASSIS_GROUND] duty=%d encA=%ld encB=%ld deltaA=%ld deltaB=%ld\r\n",
-         (int)duty,
-         (long)enc_a,
-         (long)enc_b,
-         (long)delta_a,
-         (long)delta_b);
+  APP_LOG("[CHASSIS_GROUND] duty=%d encA=%ld encB=%ld deltaA=%ld deltaB=%ld",
+          (int)duty,
+          (long)enc_a,
+          (long)enc_b,
+          (long)delta_a,
+          (long)delta_b);
 }
 #endif
 
 #if APP_ENABLE_CHASSIS_SPEED_BALANCE_TEST
 static void App_RunChassisSpeedBalanceTest(void)
 {
-  printf("[BALANCE] speed balance test start\r\n");
+  APP_LOG("[BALANCE] speed balance test start");
 
   Chassis_Init();
   Chassis_Stop();
@@ -923,7 +961,7 @@ static void App_RunChassisSpeedBalanceTest(void)
   App_RunChassisSpeedBalancePhase("backward", -1, CHASSIS_BALANCE_BASE_DUTY);
   Chassis_Stop();
 
-  printf("[BALANCE] speed balance test done\r\n");
+  APP_LOG("[BALANCE] speed balance test done");
 }
 
 static void App_RunChassisSpeedBalancePhase(const char *direction_name,
@@ -1030,7 +1068,7 @@ static void App_LogChassisSpeedBalanceStatus(const char *direction_name,
                  (long)delta_a,
                  (long)delta_b,
                  (long)err);
-  printf("%s", log_line);
+  APP_LOG_RAW(log_line);
 }
 #endif
 
@@ -1048,7 +1086,7 @@ static void App_RunWheelSpeedPiTest(void)
     .duty_max = WHEEL_SPEED_PI_DUTY_MAX,
   };
 
-  printf("[PI] wheel speed PI test start\r\n");
+  APP_LOG("[PI] wheel speed PI test start");
 
   Chassis_Init();
   Chassis_Stop();
@@ -1063,7 +1101,7 @@ static void App_RunWheelSpeedPiTest(void)
   App_RunWheelSpeedPiPhase("backward", -1, &wheel_speed_pi_config);
   Chassis_Stop();
 
-  printf("[PI] wheel speed PI test done\r\n");
+  APP_LOG("[PI] wheel speed PI test done");
 }
 
 static void App_RunWheelSpeedPiPhase(const char *direction_name,
@@ -1148,7 +1186,7 @@ static void App_LogWheelSpeedPiStatus(const char *direction_name,
                  (long)right_state->error,
                  (long)left_state->integral,
                  (long)right_state->integral);
-  printf("%s", log_line);
+  APP_LOG_RAW(log_line);
 }
 #endif
 
@@ -1169,7 +1207,7 @@ static void App_RunHeadingHoldTest(void)
   float yaw_deg = 0.0f;
   uint32_t last_imu_update_ms = 0U;
 
-  printf("[HEADING] heading hold test start\r\n");
+  APP_LOG("[HEADING] heading hold test start");
 
   Chassis_Init();
   Chassis_Stop();
@@ -1204,7 +1242,7 @@ static void App_RunHeadingHoldTest(void)
   Chassis_Stop();
   MotorDriver_StopAll();
 
-  printf("[HEADING] heading hold test done\r\n");
+  APP_LOG("[HEADING] heading hold test done");
 }
 
 static void App_RunHeadingHoldPhase(const char *direction_name,
@@ -1372,55 +1410,55 @@ static void App_LogHeadingHoldStatus(const char *direction_name,
                  (long)delta_b,
                  (int)left_duty,
                  (int)right_duty);
-  printf("%s", log_line);
+  APP_LOG_RAW(log_line);
 }
 #endif
 
 #if APP_ENABLE_MOTOR_GPIO_STATIC_TEST
 static void App_RunMotorGpioStaticTest(void)
 {
-  printf("[MOTOR_GPIO] static test start\r\n");
+  APP_LOG("[MOTOR_GPIO] static test start");
 
   App_InitMotorGpioStaticPins();
 
   App_SetMotorGpioStaticPins(GPIO_PIN_RESET, GPIO_PIN_RESET, GPIO_PIN_RESET, GPIO_PIN_RESET);
-  printf("[MOTOR_GPIO] all low\r\n");
+  APP_LOG("[MOTOR_GPIO] all low");
   App_LogMotorGpioStaticState(GPIO_PIN_RESET, GPIO_PIN_RESET, GPIO_PIN_RESET, GPIO_PIN_RESET);
   osDelay(MOTOR_TEST_INITIAL_STOP_MS);
 
   App_SetMotorGpioStaticPins(GPIO_PIN_SET, GPIO_PIN_RESET, GPIO_PIN_RESET, GPIO_PIN_RESET);
-  printf("[MOTOR_GPIO] PA6 high\r\n");
+  APP_LOG("[MOTOR_GPIO] PA6 high");
   App_LogMotorGpioStaticState(GPIO_PIN_SET, GPIO_PIN_RESET, GPIO_PIN_RESET, GPIO_PIN_RESET);
   osDelay(MOTOR_GPIO_STATIC_HOLD_MS);
 
   App_SetMotorGpioStaticPins(GPIO_PIN_RESET, GPIO_PIN_SET, GPIO_PIN_RESET, GPIO_PIN_RESET);
-  printf("[MOTOR_GPIO] PA7 high\r\n");
+  APP_LOG("[MOTOR_GPIO] PA7 high");
   App_LogMotorGpioStaticState(GPIO_PIN_RESET, GPIO_PIN_SET, GPIO_PIN_RESET, GPIO_PIN_RESET);
   osDelay(MOTOR_GPIO_STATIC_HOLD_MS);
 
   App_SetMotorGpioStaticPins(GPIO_PIN_RESET, GPIO_PIN_RESET, GPIO_PIN_SET, GPIO_PIN_RESET);
-  printf("[MOTOR_GPIO] PB0 high\r\n");
+  APP_LOG("[MOTOR_GPIO] PB0 high");
   App_LogMotorGpioStaticState(GPIO_PIN_RESET, GPIO_PIN_RESET, GPIO_PIN_SET, GPIO_PIN_RESET);
   osDelay(MOTOR_GPIO_STATIC_HOLD_MS);
 
   App_SetMotorGpioStaticPins(GPIO_PIN_RESET, GPIO_PIN_RESET, GPIO_PIN_RESET, GPIO_PIN_SET);
-  printf("[MOTOR_GPIO] PB1 high\r\n");
+  APP_LOG("[MOTOR_GPIO] PB1 high");
   App_LogMotorGpioStaticState(GPIO_PIN_RESET, GPIO_PIN_RESET, GPIO_PIN_RESET, GPIO_PIN_SET);
   osDelay(MOTOR_GPIO_STATIC_HOLD_MS);
 
   App_SetMotorGpioStaticPins(GPIO_PIN_SET, GPIO_PIN_RESET, GPIO_PIN_SET, GPIO_PIN_RESET);
-  printf("[MOTOR_GPIO] AIN1 and BIN1 high\r\n");
+  APP_LOG("[MOTOR_GPIO] AIN1 and BIN1 high");
   App_LogMotorGpioStaticState(GPIO_PIN_SET, GPIO_PIN_RESET, GPIO_PIN_SET, GPIO_PIN_RESET);
   osDelay(MOTOR_GPIO_STATIC_HOLD_MS);
 
   App_SetMotorGpioStaticPins(GPIO_PIN_RESET, GPIO_PIN_SET, GPIO_PIN_RESET, GPIO_PIN_SET);
-  printf("[MOTOR_GPIO] AIN2 and BIN2 high\r\n");
+  APP_LOG("[MOTOR_GPIO] AIN2 and BIN2 high");
   App_LogMotorGpioStaticState(GPIO_PIN_RESET, GPIO_PIN_SET, GPIO_PIN_RESET, GPIO_PIN_SET);
   osDelay(MOTOR_GPIO_STATIC_HOLD_MS);
 
   App_SetMotorGpioStaticPins(GPIO_PIN_RESET, GPIO_PIN_RESET, GPIO_PIN_RESET, GPIO_PIN_RESET);
   App_LogMotorGpioStaticState(GPIO_PIN_RESET, GPIO_PIN_RESET, GPIO_PIN_RESET, GPIO_PIN_RESET);
-  printf("[MOTOR_GPIO] static test done\r\n");
+  APP_LOG("[MOTOR_GPIO] static test done");
 }
 
 static void App_InitMotorGpioStaticPins(void)
@@ -1462,11 +1500,11 @@ static void App_LogMotorGpioStaticState(GPIO_PinState pa6_state,
                                         GPIO_PinState pb0_state,
                                         GPIO_PinState pb1_state)
 {
-  printf("[MOTOR_GPIO] PA6=%u PA7=%u PB0=%u PB1=%u\r\n",
-         (pa6_state == GPIO_PIN_SET) ? 1U : 0U,
-         (pa7_state == GPIO_PIN_SET) ? 1U : 0U,
-         (pb0_state == GPIO_PIN_SET) ? 1U : 0U,
-         (pb1_state == GPIO_PIN_SET) ? 1U : 0U);
+  APP_LOG("[MOTOR_GPIO] PA6=%u PA7=%u PB0=%u PB1=%u",
+          (pa6_state == GPIO_PIN_SET) ? 1U : 0U,
+          (pa7_state == GPIO_PIN_SET) ? 1U : 0U,
+          (pb0_state == GPIO_PIN_SET) ? 1U : 0U,
+          (pb1_state == GPIO_PIN_SET) ? 1U : 0U);
 }
 #endif
 
