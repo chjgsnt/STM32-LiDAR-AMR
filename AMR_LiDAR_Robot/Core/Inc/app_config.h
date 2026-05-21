@@ -65,6 +65,10 @@
  *
  * Keep this disabled by default: when 0, the obstacle motor task only logs the
  * action it would take and never calls chassis or motor control functions.
+ *
+ * Set APP_OBSTACLE_MOTOR_ENABLE to 1 only for a wheels-off-ground low-speed
+ * test after confirming the robot is physically safe to run. Complete the
+ * wheels-off-ground test before attempting any ground test.
  */
 #ifndef APP_OBSTACLE_MOTOR_ENABLE
 #define APP_OBSTACLE_MOTOR_ENABLE 0
