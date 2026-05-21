@@ -1,6 +1,6 @@
 # Progress Report
 
-Last updated: 2026-05-21
+Last updated: 2026-05-22
 
 ## Bring-Up Summary
 
@@ -14,6 +14,8 @@ Last updated: 2026-05-21
 - Step 7: Heading hold straight-line test has a saved baseline.
 - Step 8: Test mode and logging cleanup is in progress.
 - Step 9: RPLIDAR C1 UART4 bring-up wiring and CubeMX configuration are recorded.
+- LiDAR obstacle avoidance integration status is recorded in `Docs/02_System_Integration/Obstacle_Avoidance_Status.md`.
+- `APP_ACTIVE_MODE` now selects the main runtime mode. The default mode is LiDAR obstacle dry-run, so default firmware does not drive the wheels.
 
 ## Step4 Chassis Open-Loop Test
 
@@ -276,3 +278,29 @@ TX/RX must be crossed: LiDAR `TX` -> MCU `RX`, and LiDAR `RX` -> MCU `TX`.
 - UART4 has been configured for RPLIDAR C1.
 - Hardware wiring has been completed.
 - Next step is to add raw UART reception code and verify rx byte count at 460800 baud.
+
+## LiDAR Obstacle Avoidance Integration Status
+
+### Objective
+
+- Record the current unified runtime mode selector.
+- Record the current LiDAR obstacle state machine behavior.
+- Record corner escape and IMU heading assist dry-run progress.
+- Keep the default safety rule visible in the project documentation.
+
+### Current Status
+
+- `APP_ACTIVE_MODE` is the central runtime selector.
+- Default mode is `APP_MODE_LIDAR_OBSTACLE_DRY_RUN`, with motor output disabled.
+- `APP_MODE_LIDAR_OBSTACLE_GROUND_TEST` is available for supervised short ground tests.
+- `APP_MODE_IMU_HEADING_ASSIST_DRY_RUN` is available for fixed `FORWARD_SLOW` heading-correction logging.
+- The obstacle state machine includes `FORWARD`, `TURN`, `BACKUP`, `BLOCKED`, `CORNER_BACKUP`, and `CORNER_TURN` behavior.
+- `front_wide`, `obs_front`, escape lock, timeout/reselect, and corner escape recovery have been added.
+- IMU heading assist currently defaults to `apply=0`, so correction is logged but not applied to motor output.
+
+### Known Limitations
+
+- Wall corners can still cause spinning or repeated in-place turning.
+- IMU heading assist should stay log-only until lifted-wheel testing verifies correction sign and left/right output behavior.
+
+Detailed notes and commands are in `Docs/02_System_Integration/Obstacle_Avoidance_Status.md`.
