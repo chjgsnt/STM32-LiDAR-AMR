@@ -424,7 +424,9 @@ void StartTask02(void *argument)
   {
 #if APP_ENABLE_LIDAR_BRINGUP_TEST
     App_Lidar_Task();
+#if !APP_IMU_HEADING_ASSIST_DRY_RUN_ENABLE
     App_Obstacle_Task();
+#endif
     App_ObstacleMotor_Task();
     osDelay(50);
 #else
@@ -500,7 +502,9 @@ void StartTask05(void *argument)
 #elif APP_ENABLE_HEADING_HOLD_TEST
   App_RunHeadingHoldTest();
 #elif APP_ENABLE_LIDAR_BRINGUP_TEST
-#if APP_LIDAR_OBSTACLE_GROUND_TEST_ENABLE
+#if APP_IMU_HEADING_ASSIST_DRY_RUN_ENABLE
+  APP_LOG("[APP] IMU heading assist dry-run mode: fixed FORWARD_SLOW dry-run, motor output disabled");
+#elif APP_LIDAR_OBSTACLE_GROUND_TEST_ENABLE
   APP_LOG("[APP] LiDAR obstacle ground-test mode: guarded low-speed motor output enabled");
 #else
   APP_LOG("[APP] LiDAR obstacle dry-run mode: motor output disabled");
@@ -596,6 +600,8 @@ static const char *App_GetActiveModeName(void)
   return "LiDAR obstacle dry-run";
 #elif APP_ACTIVE_MODE == APP_MODE_LIDAR_OBSTACLE_GROUND_TEST
   return "LiDAR obstacle ground-test";
+#elif APP_ACTIVE_MODE == APP_MODE_IMU_HEADING_ASSIST_DRY_RUN
+  return "IMU heading assist dry-run";
 #elif APP_ACTIVE_MODE == APP_MODE_MOTOR_TEST
   return "motor test";
 #elif APP_ACTIVE_MODE == APP_MODE_IMU_TEST

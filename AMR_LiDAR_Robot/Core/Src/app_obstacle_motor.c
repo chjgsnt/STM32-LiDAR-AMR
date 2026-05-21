@@ -4,6 +4,7 @@
 #include "app_obstacle.h"
 #include "app_test_config.h"
 #include "bringup_log.h"
+#include "mpu6500.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -14,6 +15,7 @@
 
 #define APP_OBS_MOTOR_COMMAND_INTERVAL_MS 250U
 #define APP_OBS_MOTOR_LOG_INTERVAL_MS 1000U
+#define APP_IMU_HEADING_TEST_LOG_INTERVAL_MS 250U
 #define APP_OBS_MOTOR_GROUND_START_DELAY_MS 3000U
 #define APP_OBS_MOTOR_GROUND_MAX_RUN_MS 10000U
 #define APP_OBS_MOTOR_INVALID_DISTANCE_MM 0xFFFFU
@@ -135,6 +137,20 @@ typedef struct
     const char *source;
 } AppObstacleFrontDistance;
 
+typedef struct
+{
+    uint8_t ready;
+    uint8_t active;
+    uint8_t target_valid;
+    uint8_t apply_active;
+    float yaw_deg;
+    float target_deg;
+    float current_deg;
+    float error_deg;
+    int16_t correction;
+    uint32_t last_imu_update_ms;
+} AppImuHeadingAssistState;
+
 static AppObstacleGroundState app_ground_state = APP_OBS_GROUND_STOP;
 static uint32_t app_ground_state_enter_ms = 0U;
 static uint32_t app_forward_enter_ms = 0U;
@@ -157,9 +173,32 @@ static uint8_t app_front_clear_history = 0U;
 static uint8_t app_front_history_count = 0U;
 static uint16_t app_obs_front_history[APP_OBS_GROUND_OBS_FRONT_HISTORY_SIZE];
 static uint8_t app_obs_front_history_count = 0U;
+static AppImuHeadingAssistState app_imu_heading = {0};
 
 static uint8_t App_ObstacleMotor_OutputEnabled(void);
 static int16_t App_ObstacleMotor_ConfiguredSpeed(void);
+#if APP_IMU_HEADING_ASSIST_DRY_RUN_ENABLE
+static void App_ObstacleMotor_RunHeadingAssistDryRun(uint32_t now_ms);
+#endif
+static void App_ObstacleMotor_ResetHeadingAssist(void);
+static uint8_t App_ObstacleMotor_ActionAllowsHeadingAssist(AppObstacleMotorAction action);
+static uint8_t App_ObstacleMotor_UpdateHeadingYaw(void);
+static int16_t App_ObstacleMotor_UpdateHeadingAssist(AppObstacleGroundState ground_state,
+                                                     AppObstacleMotorAction action,
+                                                     AppObstacleMotorCommand *command);
+static float App_ObstacleMotor_NormalizeAngleDeg(float angle_deg);
+static void App_ObstacleMotor_LogHeadingAssist(void);
+#if APP_IMU_HEADING_ASSIST_DRY_RUN_ENABLE
+static void App_ObstacleMotor_LogHeadingAssistTest(int16_t heading_correction);
+#endif
+static const char *App_ObstacleMotor_FormatHeadingDeg(uint8_t valid,
+                                                       float value_deg,
+                                                       char *buffer,
+                                                       uint32_t buffer_size);
+static int32_t App_ObstacleMotor_ScaleFloatRounded(float value, float multiplier);
+static const char *App_ObstacleMotor_FixedSign(int32_t value);
+static uint32_t App_ObstacleMotor_FixedWhole(int32_t value, int32_t decimal_scale);
+static uint32_t App_ObstacleMotor_FixedFraction(int32_t value, int32_t decimal_scale);
 static void App_ObstacleMotor_ResetFrontHistory(void);
 static AppObstacleFrontDistance App_ObstacleMotor_SelectObstacleFront(const AppLidarStatus *lidar);
 static void App_ObstacleMotor_UpdateFrontHistory(const AppObstacleFrontDistance *obs_front);
@@ -256,6 +295,7 @@ void App_ObstacleMotor_Init(void)
     app_corner_turn_state = APP_OBS_GROUND_TURN_RIGHT;
     app_recovery_start_ms = 0U;
     app_front_near_start_ms = 0U;
+    App_ObstacleMotor_ResetHeadingAssist();
     App_ObstacleMotor_ResetCornerTracking();
     App_ObstacleMotor_ResetFrontHistory();
 
@@ -281,6 +321,7 @@ void App_ObstacleMotor_Task(void)
     static AppObstacleMotorAction last_logged_action = APP_OBS_MOTOR_ACTION_STOP;
     static AppObstacleGroundReason last_logged_ground_reason = APP_OBS_GROUND_REASON_INIT;
     static uint8_t last_logged_start_boost = 0xFFU;
+    static uint8_t last_logged_heading_ready = 0xFFU;
     uint32_t now_ms = HAL_GetTick();
     const AppLidarStatus *lidar = App_Lidar_GetStatus();
     AppObstacleDecision decision = App_Obstacle_GetDecision();
@@ -295,6 +336,7 @@ void App_ObstacleMotor_Task(void)
     uint32_t escape_elapsed_ms = 0U;
     uint32_t corner_elapsed_ms = 0U;
     uint8_t backup_count_5s = 0U;
+    int16_t heading_correction = 0;
     AppObstacleGroundReason ground_reason = APP_OBS_GROUND_REASON_INIT;
     int16_t configured_speed = App_ObstacleMotor_ConfiguredSpeed();
     char front_text[16];
@@ -302,6 +344,40 @@ void App_ObstacleMotor_Task(void)
     char obs_front_text[16];
     char left_text[16];
     char right_text[16];
+
+#if APP_IMU_HEADING_ASSIST_DRY_RUN_ENABLE
+    (void)last_command_ms;
+    (void)ground_run_start_ms;
+    (void)last_applied_action;
+    (void)last_applied_start_boost;
+    (void)last_logged_action;
+    (void)last_logged_ground_reason;
+    (void)last_logged_start_boost;
+    (void)last_logged_heading_ready;
+    (void)lidar;
+    (void)decision;
+    (void)output_enabled;
+    (void)waiting_start_delay;
+    (void)ground_timeout;
+    (void)command_due;
+    (void)log_due;
+    (void)ground_hold_ms;
+    (void)forward_elapsed_ms;
+    (void)backup_cooldown_ms;
+    (void)escape_elapsed_ms;
+    (void)corner_elapsed_ms;
+    (void)backup_count_5s;
+    (void)heading_correction;
+    (void)ground_reason;
+    (void)configured_speed;
+    (void)front_text;
+    (void)front_wide_text;
+    (void)obs_front_text;
+    (void)left_text;
+    (void)right_text;
+    App_ObstacleMotor_RunHeadingAssistDryRun(now_ms);
+    return;
+#endif
 
     AppObstacleFrontDistance obs_front = App_ObstacleMotor_SelectObstacleFront(lidar);
     App_ObstacleMotor_UpdateFrontHistory(&obs_front);
@@ -389,6 +465,7 @@ void App_ObstacleMotor_Task(void)
     AppObstacleMotorCommand command = App_ObstacleMotor_CommandFromAction(action,
                                                                           action_speed,
                                                                           forward_start_boost);
+    heading_correction = App_ObstacleMotor_UpdateHeadingAssist(ground_state, action, &command);
 
     if ((now_ms - last_command_ms) >= APP_OBS_MOTOR_COMMAND_INTERVAL_MS)
     {
@@ -417,7 +494,8 @@ void App_ObstacleMotor_Task(void)
     if (((now_ms - last_log_ms) >= APP_OBS_MOTOR_LOG_INTERVAL_MS) ||
         (action != last_logged_action) ||
         (ground_reason != last_logged_ground_reason) ||
-        (forward_start_boost != last_logged_start_boost))
+        (forward_start_boost != last_logged_start_boost) ||
+        (app_imu_heading.ready != last_logged_heading_ready))
     {
         log_due = 1U;
     }
@@ -431,6 +509,7 @@ void App_ObstacleMotor_Task(void)
     last_logged_action = action;
     last_logged_ground_reason = ground_reason;
     last_logged_start_boost = forward_start_boost;
+    last_logged_heading_ready = app_imu_heading.ready;
 
     if ((output_enabled != 0U) && (waiting_start_delay != 0U))
     {
@@ -477,7 +556,9 @@ void App_ObstacleMotor_Task(void)
             (unsigned long)corner_elapsed_ms,
             (unsigned int)backup_count_5s);
 
-    APP_LOG("APP OBS MOTOR: enabled=%u ground=%u speed=%d trimL=%d trimR=%d action=%s start_boost=%u forward_elapsed_ms=%lu left=%d right=%d%s",
+    App_ObstacleMotor_LogHeadingAssist();
+
+    APP_LOG("APP OBS MOTOR: enabled=%u ground=%u speed=%d trimL=%d trimR=%d action=%s start_boost=%u forward_elapsed_ms=%lu heading_corr=%d heading_apply=%u left=%d right=%d%s",
             (unsigned int)APP_OBSTACLE_MOTOR_ENABLE,
             (unsigned int)APP_OBSTACLE_GROUND_TEST_ENABLE,
             (int)action_speed,
@@ -486,6 +567,8 @@ void App_ObstacleMotor_Task(void)
             App_ObstacleMotor_ActionName(action),
             (unsigned int)forward_start_boost,
             (unsigned long)forward_elapsed_ms,
+            (int)heading_correction,
+            (unsigned int)app_imu_heading.apply_active,
             (int)command.left_duty,
             (int)command.right_duty,
             App_ObstacleMotor_LogSuffix());
@@ -503,6 +586,339 @@ static uint8_t App_ObstacleMotor_OutputEnabled(void)
 static int16_t App_ObstacleMotor_ConfiguredSpeed(void)
 {
     return APP_OBSTACLE_GROUND_TEST_SPEED;
+}
+
+#if APP_IMU_HEADING_ASSIST_DRY_RUN_ENABLE
+static void App_ObstacleMotor_RunHeadingAssistDryRun(uint32_t now_ms)
+{
+    static uint32_t last_log_ms = 0U;
+    uint32_t hold_ms = 0U;
+    AppObstacleGroundState ground_state = APP_OBS_GROUND_FORWARD;
+    AppObstacleMotorAction action = APP_OBS_MOTOR_ACTION_FORWARD_SLOW;
+    int16_t action_speed = App_ObstacleMotor_ActionSpeed(action, App_ObstacleMotor_ConfiguredSpeed());
+    AppObstacleMotorCommand command = App_ObstacleMotor_CommandFromAction(action, action_speed, 0U);
+    int16_t heading_correction = 0;
+
+    App_ObstacleMotor_ClearEscapeLock("imu_heading_test");
+    App_ObstacleMotor_ClearCornerEscape("imu_heading_test", now_ms);
+    App_ObstacleMotor_ForceGroundState(APP_OBS_GROUND_FORWARD, now_ms, &hold_ms);
+    app_recovery_start_ms = 0U;
+    app_front_near_start_ms = 0U;
+
+    /*
+     * Dedicated heading test mode is always dry-run: compute correction, but
+     * pass NULL so the assist cannot change even the preview command.
+     */
+    heading_correction = App_ObstacleMotor_UpdateHeadingAssist(ground_state, action, NULL);
+
+    if ((now_ms - last_log_ms) < APP_IMU_HEADING_TEST_LOG_INTERVAL_MS)
+    {
+        return;
+    }
+
+    last_log_ms = now_ms;
+
+    App_ObstacleMotor_LogHeadingAssistTest(heading_correction);
+    APP_LOG("APP OBS MOTOR: enabled=%u ground=%u speed=%d trimL=%d trimR=%d action=%s start_boost=0 forward_elapsed_ms=%lu heading_corr=%d heading_apply=0 left=%d right=%d%s",
+            (unsigned int)APP_OBSTACLE_MOTOR_ENABLE,
+            (unsigned int)APP_OBSTACLE_GROUND_TEST_ENABLE,
+            (int)action_speed,
+            (int)APP_GROUND_LEFT_TRIM,
+            (int)APP_GROUND_RIGHT_TRIM,
+            App_ObstacleMotor_ActionName(action),
+            (unsigned long)hold_ms,
+            (int)heading_correction,
+            (int)command.left_duty,
+            (int)command.right_duty,
+            App_ObstacleMotor_LogSuffix());
+}
+#endif
+
+static void App_ObstacleMotor_ResetHeadingAssist(void)
+{
+    app_imu_heading.ready = 0U;
+    app_imu_heading.active = 0U;
+    app_imu_heading.target_valid = 0U;
+    app_imu_heading.apply_active = 0U;
+    app_imu_heading.yaw_deg = 0.0f;
+    app_imu_heading.target_deg = 0.0f;
+    app_imu_heading.current_deg = 0.0f;
+    app_imu_heading.error_deg = 0.0f;
+    app_imu_heading.correction = 0;
+    app_imu_heading.last_imu_update_ms = 0U;
+}
+
+static uint8_t App_ObstacleMotor_ActionAllowsHeadingAssist(AppObstacleMotorAction action)
+{
+    return ((action == APP_OBS_MOTOR_ACTION_FORWARD_SLOW) ||
+            (action == APP_OBS_MOTOR_ACTION_FORWARD_CAUTION)) ? 1U : 0U;
+}
+
+static uint8_t App_ObstacleMotor_UpdateHeadingYaw(void)
+{
+    MPU6500_Data_t imu;
+
+    if (MPU6500_GetLatest(&imu) == false)
+    {
+        app_imu_heading.ready = 0U;
+        return 0U;
+    }
+
+    if (imu.is_ready == 0U)
+    {
+        app_imu_heading.ready = 0U;
+        return 0U;
+    }
+
+    app_imu_heading.ready = 1U;
+
+    if (app_imu_heading.last_imu_update_ms == 0U)
+    {
+        app_imu_heading.last_imu_update_ms = imu.last_update_ms;
+        app_imu_heading.current_deg = app_imu_heading.yaw_deg;
+        return 1U;
+    }
+
+    if (imu.last_update_ms != app_imu_heading.last_imu_update_ms)
+    {
+        uint32_t dt_ms = imu.last_update_ms - app_imu_heading.last_imu_update_ms;
+
+        app_imu_heading.last_imu_update_ms = imu.last_update_ms;
+
+        if ((dt_ms != 0U) && (dt_ms <= 500U))
+        {
+            app_imu_heading.yaw_deg += imu.gz_dps * ((float)dt_ms / 1000.0f);
+            app_imu_heading.yaw_deg = App_ObstacleMotor_NormalizeAngleDeg(app_imu_heading.yaw_deg);
+        }
+    }
+
+    app_imu_heading.current_deg = app_imu_heading.yaw_deg;
+    return 1U;
+}
+
+static int16_t App_ObstacleMotor_UpdateHeadingAssist(AppObstacleGroundState ground_state,
+                                                     AppObstacleMotorAction action,
+                                                     AppObstacleMotorCommand *command)
+{
+    uint8_t assist_allowed = App_ObstacleMotor_ActionAllowsHeadingAssist(action);
+
+#if APP_IMU_HEADING_ASSIST_ENABLE
+    uint8_t imu_ready = App_ObstacleMotor_UpdateHeadingYaw();
+    int32_t correction = 0;
+
+    app_imu_heading.apply_active = 0U;
+
+    if (assist_allowed == 0U)
+    {
+        if (app_imu_heading.active != 0U)
+        {
+            APP_LOG("APP IMU HEADING: paused state=%s",
+                    App_ObstacleMotor_GroundStateName(ground_state));
+        }
+
+        app_imu_heading.active = 0U;
+        app_imu_heading.target_valid = 0U;
+        app_imu_heading.error_deg = 0.0f;
+        app_imu_heading.correction = 0;
+        return 0;
+    }
+
+    app_imu_heading.active = 1U;
+
+    if (imu_ready == 0U)
+    {
+        app_imu_heading.error_deg = 0.0f;
+        app_imu_heading.correction = 0;
+        return 0;
+    }
+
+    if (app_imu_heading.target_valid == 0U)
+    {
+        char target_text[20];
+
+        app_imu_heading.target_deg = app_imu_heading.current_deg;
+        app_imu_heading.target_valid = 1U;
+        APP_LOG("APP IMU HEADING: target captured target=%s",
+                App_ObstacleMotor_FormatHeadingDeg(1U,
+                                                   app_imu_heading.target_deg,
+                                                   target_text,
+                                                   sizeof(target_text)));
+    }
+
+    app_imu_heading.error_deg = App_ObstacleMotor_NormalizeAngleDeg(app_imu_heading.current_deg -
+                                                                    app_imu_heading.target_deg);
+
+    if (((app_imu_heading.error_deg >= 0.0f) ? app_imu_heading.error_deg : -app_imu_heading.error_deg) <
+        (float)APP_IMU_HEADING_DEADBAND_DEG)
+    {
+        correction = 0;
+    }
+    else
+    {
+        correction = App_ObstacleMotor_ScaleFloatRounded(-((float)APP_IMU_HEADING_KP * app_imu_heading.error_deg),
+                                                         1.0f);
+    }
+
+    if (correction > APP_IMU_HEADING_CORRECTION_MAX)
+    {
+        correction = APP_IMU_HEADING_CORRECTION_MAX;
+    }
+    else if (correction < -APP_IMU_HEADING_CORRECTION_MAX)
+    {
+        correction = -APP_IMU_HEADING_CORRECTION_MAX;
+    }
+
+    app_imu_heading.correction = (int16_t)correction;
+
+#if APP_IMU_HEADING_ASSIST_APPLY_TO_MOTOR
+    if ((command != NULL) && (assist_allowed != 0U))
+    {
+        command->left_duty = App_ObstacleMotor_ClampDuty((int32_t)command->left_duty -
+                                                         app_imu_heading.correction);
+        command->right_duty = App_ObstacleMotor_ClampDuty((int32_t)command->right_duty +
+                                                          app_imu_heading.correction);
+        app_imu_heading.apply_active = 1U;
+    }
+#else
+    (void)command;
+#endif
+
+    return app_imu_heading.correction;
+#else
+    (void)assist_allowed;
+    (void)ground_state;
+    (void)command;
+    app_imu_heading.ready = 0U;
+    app_imu_heading.active = 0U;
+    app_imu_heading.target_valid = 0U;
+    app_imu_heading.apply_active = 0U;
+    app_imu_heading.correction = 0;
+    return 0;
+#endif
+}
+
+static float App_ObstacleMotor_NormalizeAngleDeg(float angle_deg)
+{
+    while (angle_deg > 180.0f)
+    {
+        angle_deg -= 360.0f;
+    }
+
+    while (angle_deg < -180.0f)
+    {
+        angle_deg += 360.0f;
+    }
+
+    return angle_deg;
+}
+
+static void App_ObstacleMotor_LogHeadingAssist(void)
+{
+    char target_text[20];
+    char current_text[20];
+    char error_text[20];
+
+    APP_LOG("APP IMU HEADING: enabled=%u apply=%u ready=%u target=%s current=%s error=%s corr=%d",
+            (unsigned int)APP_IMU_HEADING_ASSIST_ENABLE,
+            (unsigned int)APP_IMU_HEADING_ASSIST_APPLY_TO_MOTOR,
+            (unsigned int)app_imu_heading.ready,
+            App_ObstacleMotor_FormatHeadingDeg(app_imu_heading.target_valid,
+                                               app_imu_heading.target_deg,
+                                               target_text,
+                                               sizeof(target_text)),
+            App_ObstacleMotor_FormatHeadingDeg(app_imu_heading.ready,
+                                               app_imu_heading.current_deg,
+                                               current_text,
+                                               sizeof(current_text)),
+            App_ObstacleMotor_FormatHeadingDeg((app_imu_heading.ready != 0U) &&
+                                               (app_imu_heading.target_valid != 0U),
+                                               app_imu_heading.error_deg,
+                                               error_text,
+                                               sizeof(error_text)),
+            (int)app_imu_heading.correction);
+}
+
+#if APP_IMU_HEADING_ASSIST_DRY_RUN_ENABLE
+static void App_ObstacleMotor_LogHeadingAssistTest(int16_t heading_correction)
+{
+    char target_text[20];
+    char current_text[20];
+    char error_text[20];
+
+    APP_LOG("APP IMU HEADING TEST: target=%s current=%s error=%s corr=%d",
+            App_ObstacleMotor_FormatHeadingDeg(app_imu_heading.target_valid,
+                                               app_imu_heading.target_deg,
+                                               target_text,
+                                               sizeof(target_text)),
+            App_ObstacleMotor_FormatHeadingDeg(app_imu_heading.ready,
+                                               app_imu_heading.current_deg,
+                                               current_text,
+                                               sizeof(current_text)),
+            App_ObstacleMotor_FormatHeadingDeg((app_imu_heading.ready != 0U) &&
+                                               (app_imu_heading.target_valid != 0U),
+                                               app_imu_heading.error_deg,
+                                               error_text,
+                                               sizeof(error_text)),
+            (int)heading_correction);
+}
+#endif
+
+static const char *App_ObstacleMotor_FormatHeadingDeg(uint8_t valid,
+                                                       float value_deg,
+                                                       char *buffer,
+                                                       uint32_t buffer_size)
+{
+    int32_t tenth_deg = 0;
+
+    if ((buffer == NULL) || (buffer_size == 0U))
+    {
+        return "";
+    }
+
+    if (valid == 0U)
+    {
+        (void)snprintf(buffer, buffer_size, "--");
+        return buffer;
+    }
+
+    tenth_deg = App_ObstacleMotor_ScaleFloatRounded(value_deg, 10.0f);
+    (void)snprintf(buffer,
+                   buffer_size,
+                   "%s%lu.%01ludeg",
+                   App_ObstacleMotor_FixedSign(tenth_deg),
+                   (unsigned long)App_ObstacleMotor_FixedWhole(tenth_deg, 10),
+                   (unsigned long)App_ObstacleMotor_FixedFraction(tenth_deg, 10));
+
+    return buffer;
+}
+
+static int32_t App_ObstacleMotor_ScaleFloatRounded(float value, float multiplier)
+{
+    float scaled = value * multiplier;
+
+    if (scaled < 0.0f)
+    {
+        return (int32_t)(scaled - 0.5f);
+    }
+
+    return (int32_t)(scaled + 0.5f);
+}
+
+static const char *App_ObstacleMotor_FixedSign(int32_t value)
+{
+    return (value < 0) ? "-" : "";
+}
+
+static uint32_t App_ObstacleMotor_FixedWhole(int32_t value, int32_t decimal_scale)
+{
+    int32_t abs_value = (value < 0) ? -value : value;
+    return (uint32_t)(abs_value / decimal_scale);
+}
+
+static uint32_t App_ObstacleMotor_FixedFraction(int32_t value, int32_t decimal_scale)
+{
+    int32_t abs_value = (value < 0) ? -value : value;
+    return (uint32_t)(abs_value % decimal_scale);
 }
 
 static void App_ObstacleMotor_ResetFrontHistory(void)

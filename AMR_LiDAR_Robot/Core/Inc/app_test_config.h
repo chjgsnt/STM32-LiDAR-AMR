@@ -22,12 +22,13 @@
 #define APP_MODE_MOTOR_TEST                 2
 #define APP_MODE_IMU_TEST                   3
 #define APP_MODE_SENSOR_BRINGUP             4
+#define APP_MODE_IMU_HEADING_ASSIST_DRY_RUN 5
 
 #ifndef APP_ACTIVE_MODE
-#define APP_ACTIVE_MODE APP_MODE_LIDAR_OBSTACLE_DRY_RUN
+#define APP_ACTIVE_MODE APP_MODE_IMU_HEADING_ASSIST_DRY_RUN
 #endif
 
-#if (APP_ACTIVE_MODE < APP_MODE_LIDAR_OBSTACLE_DRY_RUN) || (APP_ACTIVE_MODE > APP_MODE_SENSOR_BRINGUP)
+#if (APP_ACTIVE_MODE < APP_MODE_LIDAR_OBSTACLE_DRY_RUN) || (APP_ACTIVE_MODE > APP_MODE_IMU_HEADING_ASSIST_DRY_RUN)
 #error "APP_ACTIVE_MODE has an invalid value"
 #endif
 
@@ -37,6 +38,8 @@
 #define APP_MODE_IS_MOTOR_TEST                 (APP_ACTIVE_MODE == APP_MODE_MOTOR_TEST)
 #define APP_MODE_IS_IMU_TEST                   (APP_ACTIVE_MODE == APP_MODE_IMU_TEST)
 #define APP_MODE_IS_SENSOR_BRINGUP             (APP_ACTIVE_MODE == APP_MODE_SENSOR_BRINGUP)
+#define APP_MODE_IS_IMU_HEADING_ASSIST_DRY_RUN (APP_ACTIVE_MODE == APP_MODE_IMU_HEADING_ASSIST_DRY_RUN)
+#define APP_MODE_USES_LIDAR_BRINGUP            (APP_MODE_IS_LIDAR_OBSTACLE || APP_MODE_IS_IMU_HEADING_ASSIST_DRY_RUN)
 
 /*
  * Derived mode flags. Do not edit these directly.
@@ -46,6 +49,7 @@
 #define APP_TEST_MODE_ENABLE_MOTOR_TEST       APP_MODE_IS_MOTOR_TEST
 #define APP_TEST_MODE_ENABLE_IMU_TEST         APP_MODE_IS_IMU_TEST
 #define APP_TEST_MODE_ENABLE_SENSOR_BRINGUP   APP_MODE_IS_SENSOR_BRINGUP
+#define APP_IMU_HEADING_ASSIST_DRY_RUN_ENABLE APP_MODE_IS_IMU_HEADING_ASSIST_DRY_RUN
 
 /*
  * Legacy obstacle motor switches are intentionally derived from APP_ACTIVE_MODE.
@@ -210,8 +214,39 @@
 #define APP_GROUND_MOTOR_MAX_ABS 650
 #endif
 
+/*
+ * IMU heading assist for obstacle forward driving.
+ *
+ * ENABLE keeps the estimator and logs active. APPLY_TO_MOTOR must stay 0 until
+ * the correction sign is verified from logs; with 0, left/right commands are
+ * not changed.
+ */
+#ifndef APP_IMU_HEADING_ASSIST_ENABLE
+#define APP_IMU_HEADING_ASSIST_ENABLE 1
+#endif
+
+#ifndef APP_IMU_HEADING_ASSIST_APPLY_TO_MOTOR
+#define APP_IMU_HEADING_ASSIST_APPLY_TO_MOTOR 0
+#endif
+
+#ifndef APP_IMU_HEADING_KP
+#define APP_IMU_HEADING_KP 8
+#endif
+
+#ifndef APP_IMU_HEADING_CORRECTION_MAX
+#define APP_IMU_HEADING_CORRECTION_MAX 80
+#endif
+
+#ifndef APP_IMU_HEADING_DEADBAND_DEG
+#define APP_IMU_HEADING_DEADBAND_DEG 2
+#endif
+
 #if APP_MODE_IS_LIDAR_OBSTACLE_GROUND_TEST
 #warning "APP_ACTIVE_MODE is LiDAR obstacle GROUND TEST: lift wheels first, 3s start delay, 10s max run"
+#endif
+
+#if APP_IMU_HEADING_ASSIST_APPLY_TO_MOTOR
+#warning "APP_IMU_HEADING_ASSIST_APPLY_TO_MOTOR is ON: verify heading correction sign before ground driving"
 #endif
 
 #endif /* APP_TEST_CONFIG_H */
