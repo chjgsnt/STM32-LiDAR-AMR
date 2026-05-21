@@ -1,6 +1,6 @@
 # Progress Report
 
-Last updated: 2026-05-20
+Last updated: 2026-05-21
 
 ## Bring-Up Summary
 
@@ -12,6 +12,8 @@ Last updated: 2026-05-20
 - Step 5: Encoder speed balance test completed.
 - Step 6: Wheel speed PI closed-loop test completed.
 - Step 7: Heading hold straight-line test has a saved baseline.
+- Step 8: Test mode and logging cleanup is in progress.
+- Step 9: RPLIDAR C1 UART4 bring-up wiring and CubeMX configuration are recorded.
 
 ## Step4 Chassis Open-Loop Test
 
@@ -194,3 +196,83 @@ HEADING_CORR_LIMIT_BACKWARD = 50
 
 - Tune backward heading correction.
 - Add odometry-yaw fusion above the wheel speed PI layer.
+
+## Step8 Test Mode and Logging Cleanup
+
+### Objective
+
+- Centralize Step3 through Step7 bring-up test selection.
+- Keep existing motor, chassis, encoder balance, wheel PI, and heading hold tests available.
+- Make the default configuration enable only one active test mode.
+- Reduce noisy I2C scan output before LiDAR and navigation integration work.
+- Improve UART log consistency so IMU and control-task lines are less likely to interleave.
+
+### Key Implementation
+
+- Added `Core/Inc/app_config.h` as the central test-mode configuration header.
+- Added `APP_ACTIVE_TEST` with mode IDs:
+
+```c
+APP_TEST_NONE                  0
+APP_TEST_MOTOR_PWM             1
+APP_TEST_CHASSIS_OPENLOOP      2
+APP_TEST_CHASSIS_SPEED_BALANCE 3
+APP_TEST_WHEEL_SPEED_PI        4
+APP_TEST_HEADING_HOLD          5
+```
+
+- Kept the legacy `APP_ENABLE_*` switches for compatibility, with a compile-time check that rejects multiple active tests.
+- Added `APP_LOG(...)`, `APP_LOG_RAW(...)`, and timestamped `LOG_INFO(...)` on top of a single-line buffered log function.
+- Added a FreeRTOS log mutex initialized before tasks are created.
+- Added `APP_I2C_SCAN_VERBOSE`, default `0`, to suppress per-address `HAL_ERROR` noise during normal boot scans.
+- Kept I2C baseline and recovery logs available through `APP_ENABLE_I2C_BASELINE_DEBUG` and `APP_ENABLE_I2C_BUS_RECOVERY`.
+
+### Known Limitations
+
+- Direct `printf` calls outside `APP_LOG`, `LOG_INFO`, or `APP_LOG_RAW` should be avoided.
+- Step7 backward heading hold still needs tuning.
+- LiDAR UART4 bring-up is prepared; raw UART reception and navigation integration are not completed yet.
+
+### Next Stage Plan
+
+- Proceed to raw UART4 reception byte-count verification for RPLIDAR C1.
+- Continue backward heading correction tuning or add odometry-yaw fusion when returning to chassis control.
+
+## Step9 RPLIDAR C1 UART4 Bring-up Preparation
+
+### Objective
+
+- Record RPLIDAR C1 TTL UART wiring on `UART4`.
+- Record the CubeMX UART4 settings for `460800` baud, `8N1`.
+- Keep USART1 reserved for debug logging.
+- Keep validated motor-related pins unchanged.
+- Prepare only raw UART bring-up; do not mark distance parsing or obstacle avoidance as completed.
+
+### Key Configuration
+
+| Item | Value |
+| --- | --- |
+| LiDAR model | SLAMTEC RPLIDAR C1 |
+| Interface | TTL UART |
+| MCU | STM32F446RETx |
+| UART | `UART4` |
+| Baud / format | `460800`, `8N1` |
+| UART4 TX | `PC10` |
+| UART4 RX | `PC11` |
+
+### Wiring
+
+| RPLIDAR C1 wire | Connection |
+| --- | --- |
+| Red `VCC` | `5V` |
+| Black `GND` | `GND` |
+| Yellow `TX` | `PC11` / `UART4_RX` |
+| Green `RX` | `PC10` / `UART4_TX` |
+
+TX/RX must be crossed: LiDAR `TX` -> MCU `RX`, and LiDAR `RX` -> MCU `TX`.
+
+### Current Status / Next Step
+
+- UART4 has been configured for RPLIDAR C1.
+- Hardware wiring has been completed.
+- Next step is to add raw UART reception code and verify rx byte count at 460800 baud.

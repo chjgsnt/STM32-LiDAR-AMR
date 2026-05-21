@@ -12,6 +12,8 @@ The motor driver board has a fixed wiring layout, so the firmware will follow th
 
 USART2 on `PA2/PA3` is kept for ST-LINK virtual COM debug logs. The driver board ADC voltage output shown on `PA2` is therefore not connected during early bring-up.
 
+RPLIDAR C1 is assigned to `UART4` on `PC10/PC11`, so the validated motor-related pins do not change. USART1 remains reserved for debug logging and is not used for LiDAR in the current UART4 bring-up stage.
+
 ## Motor Driver Pinout
 
 | Function | Driver board label | NUCLEO pin | STM32 peripheral | Bring-up note |
@@ -41,14 +43,18 @@ USART2 on `PA2/PA3` is kept for ST-LINK virtual COM debug logs. The driver board
 
 ### RPLIDAR C1
 
-The current firmware keeps LiDAR on USART1 to avoid disturbing the motor driver pinout.
+The current LiDAR bring-up uses the SLAMTEC RPLIDAR C1 TTL UART interface on `UART4` at `460800` baud, `8N1`.
 
-| RPLIDAR C1 pin | NUCLEO pin | Peripheral | Note |
-| --- | --- | --- | --- |
-| `5V` | Stable external `5V` | Power | Need startup current margin, about 800 mA. |
-| `GND` | NUCLEO `GND` | Power | Common ground with NUCLEO. |
-| `TX` | `PA10` | `USART1_RX` + DMA | MCU receives LiDAR data. |
-| `RX` | `PA9` | `USART1_TX` | MCU sends commands. |
+| RPLIDAR C1 wire | RPLIDAR signal | NUCLEO pin | Peripheral | Note |
+| --- | --- | --- | --- | --- |
+| Red | `VCC` | `5V` | Power | LiDAR power. |
+| Black | `GND` | `GND` | Power | Common ground with NUCLEO. |
+| Yellow | `TX` | `PC11` | `UART4_RX` | LiDAR TX connects to MCU RX. |
+| Green | `RX` | `PC10` | `UART4_TX` | LiDAR RX connects to MCU TX. |
+
+TX/RX must be crossed: LiDAR `TX` -> MCU `RX`, and LiDAR `RX` -> MCU `TX`.
+
+Current stage only prepares LiDAR UART bring-up. Distance parsing and obstacle avoidance are not completed yet.
 
 ## Safety Rules For First Motor Test
 
