@@ -1,8 +1,8 @@
 #include "app_obstacle_motor.h"
 
-#include "app_config.h"
 #include "app_lidar.h"
 #include "app_obstacle.h"
+#include "app_test_config.h"
 #include "bringup_log.h"
 
 #include <stdint.h>
@@ -44,10 +44,11 @@ void App_ObstacleMotor_Init(void)
 #if APP_OBSTACLE_MOTOR_ENABLE
     Chassis_Init();
     Chassis_Stop();
-#endif
 
-    APP_LOG("APP OBS MOTOR: enabled=%u init safe low-speed mode",
-            (unsigned int)APP_OBSTACLE_MOTOR_ENABLE);
+    APP_LOG("APP OBS MOTOR: WARNING motor output ENABLED, lift wheels before test");
+#else
+    APP_LOG("APP OBS MOTOR: motor output disabled, dry-run only");
+#endif
 }
 
 void App_ObstacleMotor_Task(void)
