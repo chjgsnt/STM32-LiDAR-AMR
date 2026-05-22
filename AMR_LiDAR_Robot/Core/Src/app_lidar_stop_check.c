@@ -38,6 +38,7 @@ typedef enum
 
 static const char *App_LidarStopCheck_ReasonName(AppLidarStopReason reason);
 static void App_LidarStopCheck_LogFinal(uint32_t now_ms,
+                                        uint32_t control_seq,
                                         uint8_t lidar_ready,
                                         uint8_t front_valid,
                                         uint16_t front_min_mm,
@@ -49,11 +50,13 @@ static void App_LidarStopCheck_LogFinal(uint32_t now_ms,
                                         AppLidarStopReason reason);
 
 static uint32_t app_lidar_stop_check_start_ms = 0U;
+static uint32_t app_lidar_stop_check_control_seq = 0U;
 static uint8_t app_lidar_stop_check_drive_latched = 0U;
 
 void App_LidarStopCheck_Init(void)
 {
     app_lidar_stop_check_start_ms = HAL_GetTick();
+    app_lidar_stop_check_control_seq = 0U;
     app_lidar_stop_check_drive_latched = 0U;
 
     Chassis_Init();
@@ -72,6 +75,7 @@ void App_LidarStopCheck_Init(void)
 void App_LidarStopCheck_Task(void)
 {
     uint32_t now_ms = HAL_GetTick();
+    uint32_t control_seq = ++app_lidar_stop_check_control_seq;
     const AppLidarStatus *lidar = App_Lidar_GetStatus();
     uint8_t lidar_ready = 0U;
     uint8_t front_valid = 0U;
@@ -154,9 +158,12 @@ void App_LidarStopCheck_Task(void)
         right_cmd = 0;
         obstacle_stop = 1U;
 
+        APP_LOG("APP LIDAR CMD: seq=%lu action=STOP",
+                (unsigned long)control_seq);
         Chassis_Stop();
         MotorDriver_StopAll();
         App_LidarStopCheck_LogFinal(now_ms,
+                                    control_seq,
                                     lidar_ready,
                                     front_valid,
                                     front_min_mm,
@@ -174,8 +181,13 @@ void App_LidarStopCheck_Task(void)
     left_cmd = APP_LIDAR_STOP_CHECK_FORWARD_LEFT_CMD;
     right_cmd = APP_LIDAR_STOP_CHECK_FORWARD_RIGHT_CMD;
 
+    APP_LOG("APP LIDAR CMD: seq=%lu action=FORWARD left=%d right=%d",
+            (unsigned long)control_seq,
+            (int)left_cmd,
+            (int)right_cmd);
     Chassis_SetRaw(left_cmd, right_cmd);
     App_LidarStopCheck_LogFinal(now_ms,
+                                control_seq,
                                 lidar_ready,
                                 front_valid,
                                 front_min_mm,
@@ -191,9 +203,12 @@ void App_LidarStopCheck_Task(void)
     right_cmd = 0;
     obstacle_stop = 1U;
 
+    APP_LOG("APP LIDAR CMD: seq=%lu action=STOP",
+            (unsigned long)control_seq);
     Chassis_Stop();
     MotorDriver_StopAll();
     App_LidarStopCheck_LogFinal(now_ms,
+                                control_seq,
                                 lidar_ready,
                                 front_valid,
                                 front_min_mm,
@@ -208,6 +223,7 @@ void App_LidarStopCheck_Task(void)
 }
 
 static void App_LidarStopCheck_LogFinal(uint32_t now_ms,
+                                        uint32_t control_seq,
                                         uint8_t lidar_ready,
                                         uint8_t front_valid,
                                         uint16_t front_min_mm,
@@ -246,7 +262,8 @@ static void App_LidarStopCheck_LogFinal(uint32_t now_ms,
     last_right_cmd = right_cmd;
     last_reason = reason;
 
-    APP_LOG("APP LIDAR STOP: ready=%u front_valid=%u front_min_mm=%u would_clear_forward=%u drive_latched=%u obstacle_stop=%u left_cmd=%d right_cmd=%d reason=%s",
+    APP_LOG("APP LIDAR STOP: seq=%lu ready=%u front_valid=%u front_min_mm=%u would_clear_forward=%u drive_latched=%u obstacle_stop=%u left_cmd=%d right_cmd=%d reason=%s",
+            (unsigned long)control_seq,
             (unsigned int)lidar_ready,
             (unsigned int)front_valid,
             (unsigned int)front_min_mm,
