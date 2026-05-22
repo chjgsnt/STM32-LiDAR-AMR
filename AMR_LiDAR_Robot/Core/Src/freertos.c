@@ -503,7 +503,13 @@ void StartTask05(void *argument)
   App_RunHeadingHoldTest();
 #elif APP_ENABLE_LIDAR_BRINGUP_TEST
 #if APP_IMU_HEADING_ASSIST_DRY_RUN_ENABLE
+#if APP_IMU_HEADING_ASSIST_LIFTED_WHEEL_OUTPUT_ENABLE
+  APP_LOG("[APP] IMU heading assist lifted-wheel-test: fixed FORWARD_SLOW, motor output enabled, ground=0");
+#elif APP_IMU_HEADING_ASSIST_LIFTED_WHEEL_TEST_ACTIVE
+  APP_LOG("[APP] IMU heading assist lifted-wheel-test: fixed FORWARD_SLOW, apply=0, motor output disabled, ground=0");
+#else
   APP_LOG("[APP] IMU heading assist dry-run mode: fixed FORWARD_SLOW dry-run, motor output disabled");
+#endif
 #elif APP_LIDAR_OBSTACLE_GROUND_TEST_ENABLE
   APP_LOG("[APP] LiDAR obstacle ground-test mode: guarded low-speed motor output enabled");
 #else

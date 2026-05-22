@@ -9,7 +9,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
-#if APP_OBSTACLE_MOTOR_ENABLE && APP_OBSTACLE_GROUND_TEST_ENABLE
+#if APP_OBSTACLE_MOTOR_ENABLE
 #include "chassis.h"
 #endif
 
@@ -299,11 +299,18 @@ void App_ObstacleMotor_Init(void)
     App_ObstacleMotor_ResetCornerTracking();
     App_ObstacleMotor_ResetFrontHistory();
 
-#if APP_OBSTACLE_MOTOR_ENABLE && APP_OBSTACLE_GROUND_TEST_ENABLE
+#if APP_IMU_HEADING_ASSIST_LIFTED_WHEEL_OUTPUT_ENABLE
+    Chassis_Init();
+    Chassis_Stop();
+
+    APP_LOG("APP OBS MOTOR: WARNING lifted-wheel-test output ENABLED, ground=0, keep wheels lifted");
+#elif APP_OBSTACLE_MOTOR_ENABLE && APP_OBSTACLE_GROUND_TEST_ENABLE
     Chassis_Init();
     Chassis_Stop();
 
     APP_LOG("APP OBS MOTOR: WARNING motor output ENABLED, lift wheels before test");
+#elif APP_IMU_HEADING_ASSIST_LIFTED_WHEEL_TEST_ACTIVE
+    APP_LOG("APP OBS MOTOR: lifted-wheel-test selected, apply=0, motor output disabled, ground=0");
 #elif APP_OBSTACLE_MOTOR_ENABLE
     APP_LOG("APP OBS MOTOR: motor output disabled, ground-test disabled dry-run only");
 #else
@@ -576,7 +583,7 @@ void App_ObstacleMotor_Task(void)
 
 static uint8_t App_ObstacleMotor_OutputEnabled(void)
 {
-#if APP_OBSTACLE_MOTOR_ENABLE && APP_OBSTACLE_GROUND_TEST_ENABLE
+#if APP_OBSTACLE_MOTOR_ENABLE
     return 1U;
 #else
     return 0U;
@@ -591,13 +598,16 @@ static int16_t App_ObstacleMotor_ConfiguredSpeed(void)
 #if APP_IMU_HEADING_ASSIST_DRY_RUN_ENABLE
 static void App_ObstacleMotor_RunHeadingAssistDryRun(uint32_t now_ms)
 {
+    static uint32_t last_command_ms = 0U;
     static uint32_t last_log_ms = 0U;
     uint32_t hold_ms = 0U;
     AppObstacleGroundState ground_state = APP_OBS_GROUND_FORWARD;
     AppObstacleMotorAction action = APP_OBS_MOTOR_ACTION_FORWARD_SLOW;
     int16_t action_speed = App_ObstacleMotor_ActionSpeed(action, App_ObstacleMotor_ConfiguredSpeed());
     AppObstacleMotorCommand command = App_ObstacleMotor_CommandFromAction(action, action_speed, 0U);
+    AppObstacleMotorCommand *apply_command = NULL;
     int16_t heading_correction = 0;
+    uint8_t output_enabled = App_ObstacleMotor_OutputEnabled();
 
     App_ObstacleMotor_ClearEscapeLock("imu_heading_test");
     App_ObstacleMotor_ClearCornerEscape("imu_heading_test", now_ms);
@@ -605,11 +615,18 @@ static void App_ObstacleMotor_RunHeadingAssistDryRun(uint32_t now_ms)
     app_recovery_start_ms = 0U;
     app_front_near_start_ms = 0U;
 
-    /*
-     * Dedicated heading test mode is always dry-run: compute correction, but
-     * pass NULL so the assist cannot change even the preview command.
-     */
-    heading_correction = App_ObstacleMotor_UpdateHeadingAssist(ground_state, action, NULL);
+#if APP_IMU_HEADING_ASSIST_LIFTED_WHEEL_OUTPUT_ENABLE
+    apply_command = &command;
+#endif
+
+    heading_correction = App_ObstacleMotor_UpdateHeadingAssist(ground_state, action, apply_command);
+
+    if ((output_enabled != 0U) &&
+        ((now_ms - last_command_ms) >= APP_OBS_MOTOR_COMMAND_INTERVAL_MS))
+    {
+        App_ObstacleMotor_ApplyAction(action, &command);
+        last_command_ms = now_ms;
+    }
 
     if ((now_ms - last_log_ms) < APP_IMU_HEADING_TEST_LOG_INTERVAL_MS)
     {
@@ -619,17 +636,18 @@ static void App_ObstacleMotor_RunHeadingAssistDryRun(uint32_t now_ms)
     last_log_ms = now_ms;
 
     App_ObstacleMotor_LogHeadingAssistTest(heading_correction);
-    APP_LOG("APP OBS MOTOR: enabled=%u ground=%u speed=%d trimL=%d trimR=%d action=%s start_boost=0 forward_elapsed_ms=%lu heading_corr=%d heading_apply=0 left=%d right=%d%s",
-            (unsigned int)APP_OBSTACLE_MOTOR_ENABLE,
-            (unsigned int)APP_OBSTACLE_GROUND_TEST_ENABLE,
+    APP_LOG("APP OBS MOTOR: enabled=%u ground=0 action=%s heading_corr=%d heading_apply=%u lifted_wheel=%u left=%d right=%d speed=%d trimL=%d trimR=%d start_boost=0 forward_elapsed_ms=%lu%s",
+            (unsigned int)output_enabled,
+            App_ObstacleMotor_ActionName(action),
+            (int)heading_correction,
+            (unsigned int)app_imu_heading.apply_active,
+            (unsigned int)APP_IMU_HEADING_ASSIST_LIFTED_WHEEL_TEST_ENABLE,
+            (int)command.left_duty,
+            (int)command.right_duty,
             (int)action_speed,
             (int)APP_GROUND_LEFT_TRIM,
             (int)APP_GROUND_RIGHT_TRIM,
-            App_ObstacleMotor_ActionName(action),
             (unsigned long)hold_ms,
-            (int)heading_correction,
-            (int)command.left_duty,
-            (int)command.right_duty,
             App_ObstacleMotor_LogSuffix());
 }
 #endif
@@ -770,8 +788,8 @@ static int16_t App_ObstacleMotor_UpdateHeadingAssist(AppObstacleGroundState grou
 
     app_imu_heading.correction = (int16_t)correction;
 
-#if APP_IMU_HEADING_ASSIST_APPLY_TO_MOTOR
-    if ((command != NULL) && (assist_allowed != 0U))
+#if APP_IMU_HEADING_ASSIST_LIFTED_WHEEL_OUTPUT_ENABLE
+    if ((command != NULL) && (action == APP_OBS_MOTOR_ACTION_FORWARD_SLOW))
     {
         command->left_duty = App_ObstacleMotor_ClampDuty((int32_t)command->left_duty -
                                                          app_imu_heading.correction);
@@ -845,7 +863,9 @@ static void App_ObstacleMotor_LogHeadingAssistTest(int16_t heading_correction)
     char current_text[20];
     char error_text[20];
 
-    APP_LOG("APP IMU HEADING TEST: target=%s current=%s error=%s corr=%d",
+    APP_LOG("APP IMU HEADING TEST: lifted_wheel=%u apply=%u target=%s current=%s error=%s corr=%d",
+            (unsigned int)APP_IMU_HEADING_ASSIST_LIFTED_WHEEL_TEST_ENABLE,
+            (unsigned int)APP_IMU_HEADING_ASSIST_APPLY_TO_MOTOR,
             App_ObstacleMotor_FormatHeadingDeg(app_imu_heading.target_valid,
                                                app_imu_heading.target_deg,
                                                target_text,
@@ -2644,7 +2664,9 @@ static const char *App_ObstacleMotor_DecisionName(AppObstacleDecision decision)
 
 static const char *App_ObstacleMotor_LogSuffix(void)
 {
-#if APP_OBSTACLE_MOTOR_ENABLE && APP_OBSTACLE_GROUND_TEST_ENABLE
+#if APP_IMU_HEADING_ASSIST_LIFTED_WHEEL_TEST_ACTIVE
+    return " lifted-wheel-test";
+#elif APP_OBSTACLE_MOTOR_ENABLE && APP_OBSTACLE_GROUND_TEST_ENABLE
     return "";
 #elif APP_OBSTACLE_MOTOR_ENABLE
     return " dry-run ground-test disabled";
@@ -2788,7 +2810,7 @@ static int16_t App_ObstacleMotor_ClampDuty(int32_t duty)
 static void App_ObstacleMotor_ApplyAction(AppObstacleMotorAction action,
                                            const AppObstacleMotorCommand *command)
 {
-#if APP_OBSTACLE_MOTOR_ENABLE && APP_OBSTACLE_GROUND_TEST_ENABLE
+#if APP_OBSTACLE_MOTOR_ENABLE
     switch (action)
     {
         case APP_OBS_MOTOR_ACTION_FORWARD_SLOW:

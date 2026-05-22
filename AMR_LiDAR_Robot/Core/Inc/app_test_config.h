@@ -25,7 +25,7 @@
 #define APP_MODE_IMU_HEADING_ASSIST_DRY_RUN 5
 
 #ifndef APP_ACTIVE_MODE
-#define APP_ACTIVE_MODE APP_MODE_IMU_HEADING_ASSIST_DRY_RUN
+#define APP_ACTIVE_MODE APP_MODE_LIDAR_OBSTACLE_DRY_RUN
 #endif
 
 #if (APP_ACTIVE_MODE < APP_MODE_LIDAR_OBSTACLE_DRY_RUN) || (APP_ACTIVE_MODE > APP_MODE_IMU_HEADING_ASSIST_DRY_RUN)
@@ -50,24 +50,6 @@
 #define APP_TEST_MODE_ENABLE_IMU_TEST         APP_MODE_IS_IMU_TEST
 #define APP_TEST_MODE_ENABLE_SENSOR_BRINGUP   APP_MODE_IS_SENSOR_BRINGUP
 #define APP_IMU_HEADING_ASSIST_DRY_RUN_ENABLE APP_MODE_IS_IMU_HEADING_ASSIST_DRY_RUN
-
-/*
- * Legacy obstacle motor switches are intentionally derived from APP_ACTIVE_MODE.
- * CLEAR SAFETY RULE:
- *   dry-run mode     -> enabled=0, ground=0, no wheel output
- *   ground-test mode -> enabled=1, ground=1, guarded low-speed output allowed
- */
-#ifdef APP_OBSTACLE_MOTOR_ENABLE
-#warning "APP_OBSTACLE_MOTOR_ENABLE is derived from APP_ACTIVE_MODE; direct override ignored"
-#undef APP_OBSTACLE_MOTOR_ENABLE
-#endif
-#define APP_OBSTACLE_MOTOR_ENABLE APP_MODE_IS_LIDAR_OBSTACLE_GROUND_TEST
-
-#ifdef APP_OBSTACLE_GROUND_TEST_ENABLE
-#warning "APP_OBSTACLE_GROUND_TEST_ENABLE is derived from APP_ACTIVE_MODE; direct override ignored"
-#undef APP_OBSTACLE_GROUND_TEST_ENABLE
-#endif
-#define APP_OBSTACLE_GROUND_TEST_ENABLE APP_MODE_IS_LIDAR_OBSTACLE_GROUND_TEST
 
 /*
  * TEST OPERATOR SPEED SETTINGS.
@@ -229,6 +211,16 @@
 #define APP_IMU_HEADING_ASSIST_APPLY_TO_MOTOR 0
 #endif
 
+#ifndef APP_IMU_HEADING_ASSIST_LIFTED_WHEEL_TEST_ENABLE
+#define APP_IMU_HEADING_ASSIST_LIFTED_WHEEL_TEST_ENABLE 0
+#endif
+
+#define APP_IMU_HEADING_ASSIST_LIFTED_WHEEL_TEST_ACTIVE \
+    (APP_MODE_IS_IMU_HEADING_ASSIST_DRY_RUN && (APP_IMU_HEADING_ASSIST_LIFTED_WHEEL_TEST_ENABLE != 0))
+
+#define APP_IMU_HEADING_ASSIST_LIFTED_WHEEL_OUTPUT_ENABLE \
+    (APP_IMU_HEADING_ASSIST_LIFTED_WHEEL_TEST_ACTIVE && (APP_IMU_HEADING_ASSIST_APPLY_TO_MOTOR != 0))
+
 #ifndef APP_IMU_HEADING_KP
 #define APP_IMU_HEADING_KP 8
 #endif
@@ -241,12 +233,41 @@
 #define APP_IMU_HEADING_DEADBAND_DEG 2
 #endif
 
+/*
+ * Legacy obstacle motor switches are intentionally derived from APP_ACTIVE_MODE.
+ * CLEAR SAFETY RULE:
+ *   dry-run mode              -> enabled=0, ground=0, no wheel output
+ *   ground-test mode          -> enabled=1, ground=1, guarded low-speed output allowed
+ *   IMU lifted-wheel test     -> enabled=1, ground=0, only when explicitly armed below
+ *
+ * The lifted-wheel output path requires all of:
+ *   APP_ACTIVE_MODE == APP_MODE_IMU_HEADING_ASSIST_DRY_RUN
+ *   APP_IMU_HEADING_ASSIST_LIFTED_WHEEL_TEST_ENABLE == 1
+ *   APP_IMU_HEADING_ASSIST_APPLY_TO_MOTOR == 1
+ */
+#ifdef APP_OBSTACLE_MOTOR_ENABLE
+#warning "APP_OBSTACLE_MOTOR_ENABLE is derived from APP_ACTIVE_MODE; direct override ignored"
+#undef APP_OBSTACLE_MOTOR_ENABLE
+#endif
+#define APP_OBSTACLE_MOTOR_ENABLE \
+    (APP_MODE_IS_LIDAR_OBSTACLE_GROUND_TEST || APP_IMU_HEADING_ASSIST_LIFTED_WHEEL_OUTPUT_ENABLE)
+
+#ifdef APP_OBSTACLE_GROUND_TEST_ENABLE
+#warning "APP_OBSTACLE_GROUND_TEST_ENABLE is derived from APP_ACTIVE_MODE; direct override ignored"
+#undef APP_OBSTACLE_GROUND_TEST_ENABLE
+#endif
+#define APP_OBSTACLE_GROUND_TEST_ENABLE APP_MODE_IS_LIDAR_OBSTACLE_GROUND_TEST
+
 #if APP_MODE_IS_LIDAR_OBSTACLE_GROUND_TEST
 #warning "APP_ACTIVE_MODE is LiDAR obstacle GROUND TEST: lift wheels first, 3s start delay, 10s max run"
 #endif
 
+#if APP_IMU_HEADING_ASSIST_LIFTED_WHEEL_TEST_ENABLE
+#warning "IMU heading assist lifted-wheel test is ON: lift wheels before testing"
+#endif
+
 #if APP_IMU_HEADING_ASSIST_APPLY_TO_MOTOR
-#warning "APP_IMU_HEADING_ASSIST_APPLY_TO_MOTOR is ON: verify heading correction sign before ground driving"
+#warning "APP_IMU_HEADING_ASSIST_APPLY_TO_MOTOR is ON: verify heading correction sign before any motor output"
 #endif
 
 #endif /* APP_TEST_CONFIG_H */
