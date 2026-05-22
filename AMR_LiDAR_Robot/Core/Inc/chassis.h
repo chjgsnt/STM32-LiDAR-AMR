@@ -1,6 +1,8 @@
 #ifndef CHASSIS_H
 #define CHASSIS_H
 
+#include "app_test_config.h"
+
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -28,6 +30,12 @@ void Chassis_Forward(int16_t duty);
 void Chassis_Backward(int16_t duty);
 void Chassis_TurnLeft(int16_t duty);
 void Chassis_TurnRight(int16_t duty);
+
+#if APP_LIDAR_OBSTACLE_STOP_CHECK_ENABLE && \
+    !defined(APP_LIDAR_STOP_CHECK_MOTOR_OWNER) && \
+    !defined(CHASSIS_INTERNAL_IMPLEMENTATION)
+#pragma GCC poison Chassis_Init Chassis_Stop Chassis_SetRaw Chassis_Forward Chassis_Backward Chassis_TurnLeft Chassis_TurnRight
+#endif
 
 #ifdef __cplusplus
 }

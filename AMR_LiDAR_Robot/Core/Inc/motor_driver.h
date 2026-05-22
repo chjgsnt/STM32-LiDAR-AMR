@@ -1,6 +1,8 @@
 #ifndef MOTOR_DRIVER_H
 #define MOTOR_DRIVER_H
 
+#include "app_test_config.h"
+
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -19,6 +21,13 @@ void MotorDriver_SetMotorB(int16_t duty);
 int32_t MotorDriver_GetEncoderA(void);
 int32_t MotorDriver_GetEncoderB(void);
 void MotorDriver_ResetEncoders(void);
+
+#if APP_LIDAR_OBSTACLE_STOP_CHECK_ENABLE && \
+    !defined(APP_LIDAR_STOP_CHECK_MOTOR_OWNER) && \
+    !defined(CHASSIS_INTERNAL_IMPLEMENTATION) && \
+    !defined(MOTOR_DRIVER_INTERNAL_IMPLEMENTATION)
+#pragma GCC poison MotorDriver_Init MotorDriver_StopAll MotorDriver_SetMotorA MotorDriver_SetMotorB
+#endif
 
 #ifdef __cplusplus
 }

@@ -1,5 +1,8 @@
+#define MOTOR_DRIVER_INTERNAL_IMPLEMENTATION
+
 #include "motor_driver.h"
 
+#include "bringup_log.h"
 #include "tim.h"
 
 #ifndef MOTOR_DRIVER_ADC1_IN2_GPIO_INIT
@@ -8,13 +11,17 @@
 
 #define MOTOR_DRIVER_PWM_SCALE (1000U)
 #define MOTOR_DRIVER_ADC1_CHANNEL (2U)
+#define MOTOR_DRIVER_STOP_LOG_INTERVAL_MS 500U
+#define MOTOR_DRIVER_DUTY_LOG_INTERVAL_MS 500U
 
 static int16_t MotorDriver_ClampDuty(int16_t duty);
 static uint32_t MotorDriver_DutyToCompare(int16_t duty);
-static void MotorDriver_SetDualPwm(uint32_t forward_channel,
-                                   uint32_t reverse_channel,
-                                   int16_t duty);
+static int16_t MotorDriver_SetDualPwm(uint32_t forward_channel,
+                                      uint32_t reverse_channel,
+                                      int16_t duty);
 static void MotorDriver_InitAdc1In2Placeholder(void);
+static void MotorDriver_LogStopAllExecuted(void);
+static void MotorDriver_LogFinalDuty(char motor_name, int16_t duty);
 
 void MotorDriver_Init(void)
 {
@@ -61,16 +68,19 @@ void MotorDriver_StopAll(void)
     __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, 0U);
     __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, 0U);
     __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_4, 0U);
+    MotorDriver_LogStopAllExecuted();
 }
 
 void MotorDriver_SetMotorA(int16_t duty)
 {
-    MotorDriver_SetDualPwm(TIM_CHANNEL_1, TIM_CHANNEL_2, duty);
+    int16_t final_duty = MotorDriver_SetDualPwm(TIM_CHANNEL_1, TIM_CHANNEL_2, duty);
+    MotorDriver_LogFinalDuty('A', final_duty);
 }
 
 void MotorDriver_SetMotorB(int16_t duty)
 {
-    MotorDriver_SetDualPwm(TIM_CHANNEL_3, TIM_CHANNEL_4, duty);
+    int16_t final_duty = MotorDriver_SetDualPwm(TIM_CHANNEL_3, TIM_CHANNEL_4, duty);
+    MotorDriver_LogFinalDuty('B', final_duty);
 }
 
 int32_t MotorDriver_GetEncoderA(void)
@@ -126,9 +136,9 @@ static uint32_t MotorDriver_DutyToCompare(int16_t duty)
     return compare;
 }
 
-static void MotorDriver_SetDualPwm(uint32_t forward_channel,
-                                   uint32_t reverse_channel,
-                                   int16_t duty)
+static int16_t MotorDriver_SetDualPwm(uint32_t forward_channel,
+                                      uint32_t reverse_channel,
+                                      int16_t duty)
 {
     duty = MotorDriver_ClampDuty(duty);
 
@@ -147,6 +157,8 @@ static void MotorDriver_SetDualPwm(uint32_t forward_channel,
         __HAL_TIM_SET_COMPARE(&htim3, forward_channel, 0U);
         __HAL_TIM_SET_COMPARE(&htim3, reverse_channel, 0U);
     }
+
+    return duty;
 }
 
 static void MotorDriver_InitAdc1In2Placeholder(void)
@@ -174,4 +186,40 @@ static void MotorDriver_InitAdc1In2Placeholder(void)
     ADC1->SQR1 &= ~ADC_SQR1_L_Msk;
     ADC1->SQR3 = (ADC1->SQR3 & ~ADC_SQR3_SQ1_Msk) | MOTOR_DRIVER_ADC1_CHANNEL;
     ADC1->CR2 |= ADC_CR2_ADON;
+}
+
+static void MotorDriver_LogStopAllExecuted(void)
+{
+    static uint32_t last_log_ms = 0U;
+    static uint8_t has_logged = 0U;
+    uint32_t now_ms = HAL_GetTick();
+
+    if ((has_logged == 0U) || ((now_ms - last_log_ms) >= MOTOR_DRIVER_STOP_LOG_INTERVAL_MS))
+    {
+        last_log_ms = now_ms;
+        has_logged = 1U;
+        APP_LOG("MOTOR: stop_all executed=1 ccr1=%lu ccr2=%lu ccr3=%lu ccr4=%lu",
+                (unsigned long)__HAL_TIM_GET_COMPARE(&htim3, TIM_CHANNEL_1),
+                (unsigned long)__HAL_TIM_GET_COMPARE(&htim3, TIM_CHANNEL_2),
+                (unsigned long)__HAL_TIM_GET_COMPARE(&htim3, TIM_CHANNEL_3),
+                (unsigned long)__HAL_TIM_GET_COMPARE(&htim3, TIM_CHANNEL_4));
+    }
+}
+
+static void MotorDriver_LogFinalDuty(char motor_name, int16_t duty)
+{
+    static uint32_t last_log_a_ms = 0U;
+    static uint32_t last_log_b_ms = 0U;
+    static uint8_t has_logged_a = 0U;
+    static uint8_t has_logged_b = 0U;
+    uint32_t now_ms = HAL_GetTick();
+    uint32_t *last_log_ms = (motor_name == 'A') ? &last_log_a_ms : &last_log_b_ms;
+    uint8_t *has_logged = (motor_name == 'A') ? &has_logged_a : &has_logged_b;
+
+    if ((*has_logged == 0U) || ((now_ms - *last_log_ms) >= MOTOR_DRIVER_DUTY_LOG_INTERVAL_MS))
+    {
+        *last_log_ms = now_ms;
+        *has_logged = 1U;
+        APP_LOG("MOTOR: set%c final_duty=%d", motor_name, (int)duty);
+    }
 }

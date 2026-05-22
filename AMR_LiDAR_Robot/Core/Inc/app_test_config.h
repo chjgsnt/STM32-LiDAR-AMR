@@ -8,9 +8,9 @@
  * this selector so test builds do not require editing several independent
  * macros.
  *
- * Default MUST stay APP_MODE_LIDAR_OBSTACLE_DRY_RUN. In the default mode the
- * obstacle logic prints decisions and motor commands, but it must not drive
- * the wheels.
+ * Current bench mode is APP_MODE_LIDAR_OBSTACLE_STOP_CHECK. It runs only the
+ * front LiDAR stop check path and does not enter the obstacle escape state
+ * machine.
  *
  * Use APP_MODE_LIDAR_OBSTACLE_GROUND_TEST only for a supervised short ground
  * test after the lifted-wheel test has passed. Keep the 3 second start delay,
@@ -23,18 +23,20 @@
 #define APP_MODE_IMU_TEST                   3
 #define APP_MODE_SENSOR_BRINGUP             4
 #define APP_MODE_IMU_HEADING_ASSIST_DRY_RUN 5
+#define APP_MODE_LIDAR_OBSTACLE_STOP_CHECK  6
 
 #ifndef APP_ACTIVE_MODE
-#define APP_ACTIVE_MODE APP_MODE_LIDAR_OBSTACLE_DRY_RUN
+#define APP_ACTIVE_MODE APP_MODE_LIDAR_OBSTACLE_STOP_CHECK
 #endif
 
-#if (APP_ACTIVE_MODE < APP_MODE_LIDAR_OBSTACLE_DRY_RUN) || (APP_ACTIVE_MODE > APP_MODE_IMU_HEADING_ASSIST_DRY_RUN)
+#if (APP_ACTIVE_MODE < APP_MODE_LIDAR_OBSTACLE_DRY_RUN) || (APP_ACTIVE_MODE > APP_MODE_LIDAR_OBSTACLE_STOP_CHECK)
 #error "APP_ACTIVE_MODE has an invalid value"
 #endif
 
 #define APP_MODE_IS_LIDAR_OBSTACLE_DRY_RUN     (APP_ACTIVE_MODE == APP_MODE_LIDAR_OBSTACLE_DRY_RUN)
 #define APP_MODE_IS_LIDAR_OBSTACLE_GROUND_TEST (APP_ACTIVE_MODE == APP_MODE_LIDAR_OBSTACLE_GROUND_TEST)
-#define APP_MODE_IS_LIDAR_OBSTACLE             (APP_MODE_IS_LIDAR_OBSTACLE_DRY_RUN || APP_MODE_IS_LIDAR_OBSTACLE_GROUND_TEST)
+#define APP_MODE_IS_LIDAR_OBSTACLE_STOP_CHECK  (APP_ACTIVE_MODE == APP_MODE_LIDAR_OBSTACLE_STOP_CHECK)
+#define APP_MODE_IS_LIDAR_OBSTACLE             (APP_MODE_IS_LIDAR_OBSTACLE_DRY_RUN || APP_MODE_IS_LIDAR_OBSTACLE_GROUND_TEST || APP_MODE_IS_LIDAR_OBSTACLE_STOP_CHECK)
 #define APP_MODE_IS_MOTOR_TEST                 (APP_ACTIVE_MODE == APP_MODE_MOTOR_TEST)
 #define APP_MODE_IS_IMU_TEST                   (APP_ACTIVE_MODE == APP_MODE_IMU_TEST)
 #define APP_MODE_IS_SENSOR_BRINGUP             (APP_ACTIVE_MODE == APP_MODE_SENSOR_BRINGUP)
@@ -46,6 +48,7 @@
  */
 #define APP_LIDAR_OBSTACLE_DRY_RUN_ENABLE     APP_MODE_IS_LIDAR_OBSTACLE_DRY_RUN
 #define APP_LIDAR_OBSTACLE_GROUND_TEST_ENABLE APP_MODE_IS_LIDAR_OBSTACLE_GROUND_TEST
+#define APP_LIDAR_OBSTACLE_STOP_CHECK_ENABLE  APP_MODE_IS_LIDAR_OBSTACLE_STOP_CHECK
 #define APP_TEST_MODE_ENABLE_MOTOR_TEST       APP_MODE_IS_MOTOR_TEST
 #define APP_TEST_MODE_ENABLE_IMU_TEST         APP_MODE_IS_IMU_TEST
 #define APP_TEST_MODE_ENABLE_SENSOR_BRINGUP   APP_MODE_IS_SENSOR_BRINGUP
@@ -231,6 +234,11 @@
 #define APP_IMU_HEADING_ASSIST_GROUND_OUTPUT_ENABLE \
     (APP_IMU_HEADING_ASSIST_GROUND_TEST_ACTIVE && (APP_IMU_HEADING_ASSIST_APPLY_TO_MOTOR != 0))
 
+#if (APP_IMU_HEADING_ASSIST_APPLY_TO_MOTOR == 0) && \
+    (APP_IMU_HEADING_ASSIST_LIFTED_WHEEL_OUTPUT_ENABLE || APP_IMU_HEADING_ASSIST_GROUND_OUTPUT_ENABLE)
+#error "IMU heading assist output must stay disabled when APP_IMU_HEADING_ASSIST_APPLY_TO_MOTOR is 0"
+#endif
+
 #ifndef APP_IMU_HEADING_KP
 #define APP_IMU_HEADING_KP 8
 #endif
@@ -260,6 +268,7 @@
  * CLEAR SAFETY RULE:
  *   dry-run mode              -> enabled=0, ground=0, no wheel output
  *   ground-test mode          -> enabled=1, ground=1, guarded low-speed output allowed
+ *   stop-check mode           -> enabled=0, ground=0, handled by app_lidar_stop_check only
  *   IMU lifted-wheel test     -> enabled=1, ground=0, only when explicitly armed below
  *
  * The lifted-wheel output path requires all of:
@@ -285,8 +294,16 @@
 #endif
 #define APP_OBSTACLE_GROUND_TEST_ENABLE APP_MODE_IS_LIDAR_OBSTACLE_GROUND_TEST
 
+#if APP_MODE_IS_LIDAR_OBSTACLE_STOP_CHECK && (APP_OBSTACLE_MOTOR_ENABLE || APP_OBSTACLE_GROUND_TEST_ENABLE)
+#error "LidarObstacleStopCheck must not enable the obstacle motor state machine"
+#endif
+
 #if APP_MODE_IS_LIDAR_OBSTACLE_GROUND_TEST
 #warning "APP_ACTIVE_MODE is LiDAR obstacle GROUND TEST: lift wheels first, 3s start delay, 10s max run"
+#endif
+
+#if APP_MODE_IS_LIDAR_OBSTACLE_STOP_CHECK
+#warning "APP_ACTIVE_MODE is LiDAR obstacle STOP CHECK: lift wheels first, front-only motor output"
 #endif
 
 #if APP_IMU_HEADING_ASSIST_LIFTED_WHEEL_TEST_ENABLE
