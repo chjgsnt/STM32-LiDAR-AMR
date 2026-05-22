@@ -13,6 +13,7 @@
 #define APP_LIDAR_STOP_CHECK_LOG_INTERVAL_MS 500U
 #define APP_LIDAR_STOP_CHECK_START_DELAY_MS 3000U
 #define APP_LIDAR_STOP_CHECK_FRONT_STOP_MM 350U
+#define APP_LIDAR_STOP_CHECK_MOTOR_OUTPUT_ENABLE 0
 #define APP_LIDAR_STOP_CHECK_FORWARD_LEFT_CMD 220
 #define APP_LIDAR_STOP_CHECK_FORWARD_RIGHT_CMD 260
 #define APP_LIDAR_STOP_CHECK_INVALID_DISTANCE_MM 0xFFFFU
@@ -43,6 +44,7 @@ void App_LidarStopCheck_Init(void)
 
     Chassis_Init();
     Chassis_Stop();
+    MotorDriver_StopAll();
 
     APP_LOG("APP LIDAR STOP: init start_delay_ms=%u stop_mm=%u left_cmd=%d right_cmd=%d",
             (unsigned int)APP_LIDAR_STOP_CHECK_START_DELAY_MS,
@@ -60,6 +62,7 @@ void App_LidarStopCheck_Task(void)
     uint8_t front_valid = 0U;
     uint16_t front_min_mm = APP_LIDAR_STOP_CHECK_INVALID_DISTANCE_MM;
     uint8_t obstacle_stop = 1U;
+    uint8_t would_clear_forward = 0U;
     int16_t left_cmd = 0;
     int16_t right_cmd = 0;
     AppLidarStopReason reason = APP_LIDAR_STOP_REASON_NO_STATUS;
@@ -71,6 +74,15 @@ void App_LidarStopCheck_Task(void)
         ready = lidar->ready;
         front_valid = lidar->front_valid;
         front_min_mm = lidar->front_min_mm;
+
+        if ((ready != 0U) &&
+            (front_valid != 0U) &&
+            (front_min_mm != 0U) &&
+            (front_min_mm != APP_LIDAR_STOP_CHECK_INVALID_DISTANCE_MM) &&
+            (front_min_mm >= APP_LIDAR_STOP_CHECK_FRONT_STOP_MM))
+        {
+            would_clear_forward = 1U;
+        }
     }
 
     if (start_delay_active != 0U)
@@ -98,9 +110,11 @@ void App_LidarStopCheck_Task(void)
         }
         else
         {
+#if APP_LIDAR_STOP_CHECK_MOTOR_OUTPUT_ENABLE
             obstacle_stop = 0U;
             left_cmd = APP_LIDAR_STOP_CHECK_FORWARD_LEFT_CMD;
             right_cmd = APP_LIDAR_STOP_CHECK_FORWARD_RIGHT_CMD;
+#endif
             reason = APP_LIDAR_STOP_REASON_CLEAR_FORWARD;
         }
     }
@@ -112,17 +126,23 @@ void App_LidarStopCheck_Task(void)
     }
     else
     {
+#if APP_LIDAR_STOP_CHECK_MOTOR_OUTPUT_ENABLE
         Chassis_SetRaw(left_cmd, right_cmd);
+#else
+        Chassis_Stop();
+        MotorDriver_StopAll();
+#endif
     }
 
     if ((now_ms - last_log_ms) >= APP_LIDAR_STOP_CHECK_LOG_INTERVAL_MS)
     {
         last_log_ms = now_ms;
 
-        APP_LOG("APP LIDAR STOP: ready=%u front_valid=%u front_min_mm=%u obstacle_stop=%u left_cmd=%d right_cmd=%d reason=%s",
+        APP_LOG("APP LIDAR STOP: ready=%u front_valid=%u front_min_mm=%u would_clear_forward=%u obstacle_stop=%u left_cmd=%d right_cmd=%d reason=%s",
                 (unsigned int)ready,
                 (unsigned int)front_valid,
                 (unsigned int)front_min_mm,
+                (unsigned int)would_clear_forward,
                 (unsigned int)obstacle_stop,
                 (int)left_cmd,
                 (int)right_cmd,
