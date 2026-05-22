@@ -186,6 +186,9 @@ static uint8_t App_ObstacleMotor_UpdateHeadingYaw(void);
 static int16_t App_ObstacleMotor_UpdateHeadingAssist(AppObstacleGroundState ground_state,
                                                      AppObstacleMotorAction action,
                                                      AppObstacleMotorCommand *command);
+static int32_t App_ObstacleMotor_HeadingKp(void);
+static int32_t App_ObstacleMotor_HeadingCorrectionMax(void);
+static int32_t App_ObstacleMotor_HeadingDeadbandDeg(void);
 static float App_ObstacleMotor_NormalizeAngleDeg(float angle_deg);
 static void App_ObstacleMotor_LogHeadingAssist(void);
 #if APP_IMU_HEADING_ASSIST_DRY_RUN_ENABLE
@@ -722,6 +725,9 @@ static int16_t App_ObstacleMotor_UpdateHeadingAssist(AppObstacleGroundState grou
 
 #if APP_IMU_HEADING_ASSIST_ENABLE
     uint8_t imu_ready = App_ObstacleMotor_UpdateHeadingYaw();
+    int32_t heading_kp = App_ObstacleMotor_HeadingKp();
+    int32_t heading_correction_max = App_ObstacleMotor_HeadingCorrectionMax();
+    int32_t heading_deadband_deg = App_ObstacleMotor_HeadingDeadbandDeg();
     int32_t correction = 0;
 
     app_imu_heading.apply_active = 0U;
@@ -767,29 +773,38 @@ static int16_t App_ObstacleMotor_UpdateHeadingAssist(AppObstacleGroundState grou
                                                                     app_imu_heading.target_deg);
 
     if (((app_imu_heading.error_deg >= 0.0f) ? app_imu_heading.error_deg : -app_imu_heading.error_deg) <
-        (float)APP_IMU_HEADING_DEADBAND_DEG)
+        (float)heading_deadband_deg)
     {
         correction = 0;
     }
     else
     {
-        correction = App_ObstacleMotor_ScaleFloatRounded(-((float)APP_IMU_HEADING_KP * app_imu_heading.error_deg),
+        correction = App_ObstacleMotor_ScaleFloatRounded(-((float)heading_kp * app_imu_heading.error_deg),
                                                          1.0f);
     }
 
-    if (correction > APP_IMU_HEADING_CORRECTION_MAX)
+    if (correction > heading_correction_max)
     {
-        correction = APP_IMU_HEADING_CORRECTION_MAX;
+        correction = heading_correction_max;
     }
-    else if (correction < -APP_IMU_HEADING_CORRECTION_MAX)
+    else if (correction < -heading_correction_max)
     {
-        correction = -APP_IMU_HEADING_CORRECTION_MAX;
+        correction = -heading_correction_max;
     }
 
     app_imu_heading.correction = (int16_t)correction;
 
 #if APP_IMU_HEADING_ASSIST_LIFTED_WHEEL_OUTPUT_ENABLE
     if ((command != NULL) && (action == APP_OBS_MOTOR_ACTION_FORWARD_SLOW))
+    {
+        command->left_duty = App_ObstacleMotor_ClampDuty((int32_t)command->left_duty -
+                                                         app_imu_heading.correction);
+        command->right_duty = App_ObstacleMotor_ClampDuty((int32_t)command->right_duty +
+                                                          app_imu_heading.correction);
+        app_imu_heading.apply_active = 1U;
+    }
+#elif APP_IMU_HEADING_ASSIST_GROUND_OUTPUT_ENABLE
+    if ((command != NULL) && (assist_allowed != 0U))
     {
         command->left_duty = App_ObstacleMotor_ClampDuty((int32_t)command->left_duty -
                                                          app_imu_heading.correction);
@@ -815,6 +830,33 @@ static int16_t App_ObstacleMotor_UpdateHeadingAssist(AppObstacleGroundState grou
 #endif
 }
 
+static int32_t App_ObstacleMotor_HeadingKp(void)
+{
+#if APP_IMU_HEADING_ASSIST_GROUND_TEST_ACTIVE
+    return APP_IMU_HEADING_GROUND_KP;
+#else
+    return APP_IMU_HEADING_KP;
+#endif
+}
+
+static int32_t App_ObstacleMotor_HeadingCorrectionMax(void)
+{
+#if APP_IMU_HEADING_ASSIST_GROUND_TEST_ACTIVE
+    return APP_IMU_HEADING_GROUND_CORRECTION_MAX;
+#else
+    return APP_IMU_HEADING_CORRECTION_MAX;
+#endif
+}
+
+static int32_t App_ObstacleMotor_HeadingDeadbandDeg(void)
+{
+#if APP_IMU_HEADING_ASSIST_GROUND_TEST_ACTIVE
+    return APP_IMU_HEADING_GROUND_DEADBAND_DEG;
+#else
+    return APP_IMU_HEADING_DEADBAND_DEG;
+#endif
+}
+
 static float App_ObstacleMotor_NormalizeAngleDeg(float angle_deg)
 {
     while (angle_deg > 180.0f)
@@ -836,10 +878,12 @@ static void App_ObstacleMotor_LogHeadingAssist(void)
     char current_text[20];
     char error_text[20];
 
-    APP_LOG("APP IMU HEADING: enabled=%u apply=%u ready=%u target=%s current=%s error=%s corr=%d",
-            (unsigned int)APP_IMU_HEADING_ASSIST_ENABLE,
-            (unsigned int)APP_IMU_HEADING_ASSIST_APPLY_TO_MOTOR,
-            (unsigned int)app_imu_heading.ready,
+    APP_LOG("APP IMU HEADING: ground_test=%u apply=%u kp=%ld max=%ld deadband=%ld target=%s current=%s error=%s corr=%d",
+            (unsigned int)APP_IMU_HEADING_ASSIST_GROUND_TEST_ACTIVE,
+            (unsigned int)app_imu_heading.apply_active,
+            (long)App_ObstacleMotor_HeadingKp(),
+            (long)App_ObstacleMotor_HeadingCorrectionMax(),
+            (long)App_ObstacleMotor_HeadingDeadbandDeg(),
             App_ObstacleMotor_FormatHeadingDeg(app_imu_heading.target_valid,
                                                app_imu_heading.target_deg,
                                                target_text,
