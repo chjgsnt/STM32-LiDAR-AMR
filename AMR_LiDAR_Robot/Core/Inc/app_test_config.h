@@ -55,6 +55,17 @@
 #define APP_IMU_HEADING_ASSIST_DRY_RUN_ENABLE APP_MODE_IS_IMU_HEADING_ASSIST_DRY_RUN
 
 /*
+ * LiDAR stop-check motor output arm.
+ *
+ * Keep 0 for stop-only debug: clear-forward is logged as would_clear_forward,
+ * but the wheels stay stopped. Set to nonzero only after confirming the stop
+ * path on the bench.
+ */
+#ifndef APP_LIDAR_STOP_CHECK_MOTOR_OUTPUT_ENABLE
+#define APP_LIDAR_STOP_CHECK_MOTOR_OUTPUT_ENABLE 1
+#endif
+
+/*
  * TEST OPERATOR SPEED SETTINGS.
  *
  * AIR_TEST_SPEED is kept for legacy wheels-off-ground references.
