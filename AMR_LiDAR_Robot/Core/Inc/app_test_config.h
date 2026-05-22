@@ -8,9 +8,9 @@
  * this selector so test builds do not require editing several independent
  * macros.
  *
- * Current bench mode is APP_MODE_LIDAR_OBSTACLE_STOP_CHECK. It runs only the
- * front LiDAR stop check path and does not enter the obstacle escape state
- * machine.
+ * Current bench mode is APP_MODE_MOTOR_FORCED_SPIN_CHECK. It runs only the
+ * direct motor driver chain and does not depend on LiDAR, IMU, or obstacle
+ * logic.
  *
  * Use APP_MODE_LIDAR_OBSTACLE_GROUND_TEST only for a supervised short ground
  * test after the lifted-wheel test has passed. Keep the 3 second start delay,
@@ -24,12 +24,13 @@
 #define APP_MODE_SENSOR_BRINGUP             4
 #define APP_MODE_IMU_HEADING_ASSIST_DRY_RUN 5
 #define APP_MODE_LIDAR_OBSTACLE_STOP_CHECK  6
+#define APP_MODE_MOTOR_FORCED_SPIN_CHECK    7
 
 #ifndef APP_ACTIVE_MODE
-#define APP_ACTIVE_MODE APP_MODE_LIDAR_OBSTACLE_STOP_CHECK
+#define APP_ACTIVE_MODE APP_MODE_MOTOR_FORCED_SPIN_CHECK
 #endif
 
-#if (APP_ACTIVE_MODE < APP_MODE_LIDAR_OBSTACLE_DRY_RUN) || (APP_ACTIVE_MODE > APP_MODE_LIDAR_OBSTACLE_STOP_CHECK)
+#if (APP_ACTIVE_MODE < APP_MODE_LIDAR_OBSTACLE_DRY_RUN) || (APP_ACTIVE_MODE > APP_MODE_MOTOR_FORCED_SPIN_CHECK)
 #error "APP_ACTIVE_MODE has an invalid value"
 #endif
 
@@ -41,6 +42,7 @@
 #define APP_MODE_IS_IMU_TEST                   (APP_ACTIVE_MODE == APP_MODE_IMU_TEST)
 #define APP_MODE_IS_SENSOR_BRINGUP             (APP_ACTIVE_MODE == APP_MODE_SENSOR_BRINGUP)
 #define APP_MODE_IS_IMU_HEADING_ASSIST_DRY_RUN (APP_ACTIVE_MODE == APP_MODE_IMU_HEADING_ASSIST_DRY_RUN)
+#define APP_MODE_IS_MOTOR_FORCED_SPIN_CHECK    (APP_ACTIVE_MODE == APP_MODE_MOTOR_FORCED_SPIN_CHECK)
 #define APP_MODE_USES_LIDAR_BRINGUP            (APP_MODE_IS_LIDAR_OBSTACLE || APP_MODE_IS_IMU_HEADING_ASSIST_DRY_RUN)
 
 /*
@@ -53,6 +55,7 @@
 #define APP_TEST_MODE_ENABLE_IMU_TEST         APP_MODE_IS_IMU_TEST
 #define APP_TEST_MODE_ENABLE_SENSOR_BRINGUP   APP_MODE_IS_SENSOR_BRINGUP
 #define APP_IMU_HEADING_ASSIST_DRY_RUN_ENABLE APP_MODE_IS_IMU_HEADING_ASSIST_DRY_RUN
+#define APP_MOTOR_FORCED_SPIN_CHECK_ENABLE    APP_MODE_IS_MOTOR_FORCED_SPIN_CHECK
 
 /*
  * LiDAR stop-check motor output arm.
@@ -315,6 +318,10 @@
 
 #if APP_MODE_IS_LIDAR_OBSTACLE_STOP_CHECK
 #warning "APP_ACTIVE_MODE is LiDAR obstacle STOP CHECK: lift wheels first, front-only motor output"
+#endif
+
+#if APP_MODE_IS_MOTOR_FORCED_SPIN_CHECK
+#warning "APP_ACTIVE_MODE is MOTOR FORCED SPIN CHECK: lift wheels first, direct motor driver output"
 #endif
 
 #if APP_IMU_HEADING_ASSIST_LIFTED_WHEEL_TEST_ENABLE

@@ -26,8 +26,14 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "app_lidar.h"
+#include "app_lidar_stop_check.h"
+#if APP_ENABLE_MOTOR_FORCED_SPIN_CHECK_TEST
+#include "app_motor_forced_spin_check.h"
+#endif
+#if !APP_LIDAR_OBSTACLE_STOP_CHECK_ENABLE
 #include "app_obstacle.h"
 #include "app_obstacle_motor.h"
+#endif
 #include "bringup_log.h"
 #include "i2c.h"
 #include "i2c_scan.h"
@@ -187,20 +193,22 @@ const osThreadAttr_t controlTask_attributes = {
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
+#if !APP_ENABLE_MOTOR_FORCED_SPIN_CHECK_TEST
 static int32_t App_ScaleFloatRounded(float value, float multiplier);
 static const char *App_FixedSign(int32_t value);
 static uint32_t App_FixedWhole(int32_t value, int32_t decimal_scale);
 static uint32_t App_FixedFraction(int32_t value, int32_t decimal_scale);
 static void App_LogImuStatus(void);
 static void App_LogI2cBaseline(void);
-static const char *App_GetActiveModeName(void);
-static const char *App_GetActiveTestName(void);
 #if APP_ENABLE_I2C_BUS_RECOVERY
 static void App_RecoverI2cBus(void);
 static void App_InitI2cRecoveryGpio(void);
 static GPIO_PinState App_ReadI2cScl(void);
 static GPIO_PinState App_ReadI2cSda(void);
 #endif
+#endif
+static const char *App_GetActiveModeName(void);
+static const char *App_GetActiveTestName(void);
 #if APP_ENABLE_MOTOR_TEST && !APP_ENABLE_MOTOR_GPIO_STATIC_TEST
 static void App_RunMotorBringupTest(void);
 static void App_RunMotorPhase(const char *phase, int16_t duty, uint8_t motor_index);
@@ -373,6 +381,15 @@ void StartDefaultTask(void *argument)
 {
   /* USER CODE BEGIN StartDefaultTask */
   LOG_INFO("FreeRTOS started.");
+#if APP_ENABLE_MOTOR_FORCED_SPIN_CHECK_TEST
+  APP_LOG("[APP] MotorForcedSpinCheck: default task idle, skipping I2C/IMU bring-up");
+
+  for(;;)
+  {
+    HAL_GPIO_TogglePin(BRINGUP_LED_GPIO_PORT, BRINGUP_LED_PIN);
+    osDelay(1000);
+  }
+#else
 #if APP_ENABLE_I2C_BASELINE_DEBUG
   App_LogI2cBaseline();
 #endif
@@ -400,6 +417,7 @@ void StartDefaultTask(void *argument)
 
     osDelay(IMU_SAMPLE_PERIOD_MS);
   }
+#endif
   /* USER CODE END StartDefaultTask */
 }
 
@@ -415,8 +433,12 @@ void StartTask02(void *argument)
   /* USER CODE BEGIN StartTask02 */
 #if APP_ENABLE_LIDAR_BRINGUP_TEST
   App_Lidar_Init();
+#if APP_LIDAR_OBSTACLE_STOP_CHECK_ENABLE
+  App_LidarStopCheck_Init();
+#else
   App_Obstacle_Init();
   App_ObstacleMotor_Init();
+#endif
 #endif
 
   /* Infinite loop */
@@ -424,10 +446,14 @@ void StartTask02(void *argument)
   {
 #if APP_ENABLE_LIDAR_BRINGUP_TEST
     App_Lidar_Task();
+#if APP_LIDAR_OBSTACLE_STOP_CHECK_ENABLE
+    App_LidarStopCheck_Task();
+#else
 #if !APP_IMU_HEADING_ASSIST_DRY_RUN_ENABLE
     App_Obstacle_Task();
 #endif
     App_ObstacleMotor_Task();
+#endif
     osDelay(50);
 #else
     osDelay(1000);
@@ -485,7 +511,9 @@ void StartTask05(void *argument)
   APP_LOG("[APP] active_mode=%s", App_GetActiveModeName());
   APP_LOG("[APP] active_test=%s", App_GetActiveTestName());
 
-#if APP_ENABLE_MOTOR_GPIO_STATIC_TEST
+#if APP_ENABLE_MOTOR_FORCED_SPIN_CHECK_TEST
+  App_MotorForcedSpinCheck_Run();
+#elif APP_ENABLE_MOTOR_GPIO_STATIC_TEST
   App_RunMotorGpioStaticTest();
 #elif APP_ENABLE_MOTOR_TEST
   App_RunMotorBringupTest();
@@ -502,7 +530,9 @@ void StartTask05(void *argument)
 #elif APP_ENABLE_HEADING_HOLD_TEST
   App_RunHeadingHoldTest();
 #elif APP_ENABLE_LIDAR_BRINGUP_TEST
-#if APP_IMU_HEADING_ASSIST_DRY_RUN_ENABLE
+#if APP_LIDAR_OBSTACLE_STOP_CHECK_ENABLE
+  APP_LOG("[APP] LiDAR obstacle stop check: front-only forward/stop, obstacle state machine disabled");
+#elif APP_IMU_HEADING_ASSIST_DRY_RUN_ENABLE
 #if APP_IMU_HEADING_ASSIST_LIFTED_WHEEL_OUTPUT_ENABLE
   APP_LOG("[APP] IMU heading assist lifted-wheel-test: fixed FORWARD_SLOW, motor output enabled, ground=0");
 #elif APP_IMU_HEADING_ASSIST_LIFTED_WHEEL_TEST_ACTIVE
@@ -527,6 +557,7 @@ void StartTask05(void *argument)
 
 /* Private application code --------------------------------------------------*/
 /* USER CODE BEGIN Application */
+#if !APP_ENABLE_MOTOR_FORCED_SPIN_CHECK_TEST
 static int32_t App_ScaleFloatRounded(float value, float multiplier)
 {
   float scaled = value * multiplier;
@@ -599,6 +630,7 @@ static void App_LogI2cBaseline(void)
   APP_LOG("[I2C_BASELINE] hi2c1.State=0x%02X", (unsigned int)hi2c1.State);
   APP_LOG("[I2C_BASELINE] hi2c1.ErrorCode=0x%08lX", (unsigned long)hi2c1.ErrorCode);
 }
+#endif
 
 static const char *App_GetActiveModeName(void)
 {
@@ -608,6 +640,10 @@ static const char *App_GetActiveModeName(void)
   return "LiDAR obstacle ground-test";
 #elif APP_ACTIVE_MODE == APP_MODE_IMU_HEADING_ASSIST_DRY_RUN
   return "IMU heading assist dry-run";
+#elif APP_ACTIVE_MODE == APP_MODE_LIDAR_OBSTACLE_STOP_CHECK
+  return "LidarObstacleStopCheck";
+#elif APP_ACTIVE_MODE == APP_MODE_MOTOR_FORCED_SPIN_CHECK
+  return "MotorForcedSpinCheck";
 #elif APP_ACTIVE_MODE == APP_MODE_MOTOR_TEST
   return "motor test";
 #elif APP_ACTIVE_MODE == APP_MODE_IMU_TEST
@@ -635,12 +671,16 @@ static const char *App_GetActiveTestName(void)
   return "heading hold";
 #elif APP_ACTIVE_TEST == APP_TEST_LIDAR_BRINGUP
   return "LiDAR bring-up";
+#elif APP_ACTIVE_TEST == APP_TEST_LIDAR_STOP_CHECK
+  return "LidarObstacleStopCheck";
+#elif APP_ACTIVE_TEST == APP_TEST_MOTOR_FORCED_SPIN_CHECK
+  return "MotorForcedSpinCheck";
 #else
   return "unknown";
 #endif
 }
 
-#if APP_ENABLE_I2C_BUS_RECOVERY
+#if APP_ENABLE_I2C_BUS_RECOVERY && !APP_ENABLE_MOTOR_FORCED_SPIN_CHECK_TEST
 static void App_RecoverI2cBus(void)
 {
   GPIO_PinState before_scl = App_ReadI2cScl();
