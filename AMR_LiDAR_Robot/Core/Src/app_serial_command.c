@@ -3,6 +3,7 @@
 #include "amr_system.h"
 #include "app_lidar.h"
 #include "app_odometry.h"
+#include "app_return_path.h"
 #include "app_safety.h"
 #include "bringup_log.h"
 #include "chassis.h"
@@ -263,14 +264,24 @@ static void App_SerialCommand_HandleLine(const char *line)
     else if (strcmp(line, "stop") == 0)
     {
         AMR_RequestStop("serial_stop");
+        ReturnExecutor_Stop();
     }
     else if (strcmp(line, "return") == 0)
     {
         AMR_RequestReturn("serial_return");
+        if (AMR_GetState() == AMR_STATE_RETURN)
+        {
+            ReturnExecutor_Start();
+        }
+        else
+        {
+            APP_LOG("[RETURN] ignored state=%s", AMR_StateName(AMR_GetState()));
+        }
     }
     else if (strcmp(line, "estop") == 0)
     {
         AMR_RequestEStop("serial_estop");
+        ReturnExecutor_Stop();
     }
     else if (strcmp(line, "reset_fault") == 0)
     {
@@ -366,6 +377,8 @@ static void App_SerialCommand_LogStatus(void)
     uint32_t lidar_last_valid_update_ms;
     uint32_t lidar_rx_age_ms;
     uint32_t lidar_valid_age_ms;
+    uint16_t path_count;
+    ReturnExecState_t return_state;
 
     (void)App_Safety_GetStatus(&safety);
     (void)Odom_GetPose(&pose);
@@ -377,6 +390,8 @@ static void App_SerialCommand_LogStatus(void)
     lidar_last_valid_update_ms = (lidar != NULL) ? lidar->last_valid_update_ms : 0U;
     lidar_rx_age_ms = App_SerialCommand_ElapsedMs(now_ms, lidar_last_rx_tick_ms);
     lidar_valid_age_ms = App_SerialCommand_ElapsedMs(now_ms, lidar_last_valid_update_ms);
+    path_count = ReturnPath_Count();
+    return_state = ReturnExecutor_GetState();
 
     x_mm = App_SerialCommand_ScaleFloatRounded(pose.x_m, 1000.0f);
     y_mm = App_SerialCommand_ScaleFloatRounded(pose.y_m, 1000.0f);
@@ -406,6 +421,9 @@ static void App_SerialCommand_LogStatus(void)
             App_SerialCommand_FixedSign(theta_tenth_deg),
             (unsigned long)App_SerialCommand_FixedWhole(theta_tenth_deg, 10),
             (unsigned long)App_SerialCommand_FixedFraction(theta_tenth_deg, 10));
+    APP_LOG("[STATUS] path count=%u return_state=%s",
+            (unsigned int)path_count,
+            ReturnExecutor_StateName(return_state));
 }
 
 static int32_t App_SerialCommand_ScaleFloatRounded(float value, float multiplier)

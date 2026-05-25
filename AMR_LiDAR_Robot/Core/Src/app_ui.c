@@ -3,6 +3,7 @@
 #include "amr_system.h"
 #include "app_lidar.h"
 #include "app_odometry.h"
+#include "app_return_path.h"
 #include "app_safety.h"
 #include "bringup_log.h"
 #include "chassis.h"
@@ -17,7 +18,7 @@
 #endif
 
 #define AMR_UI_UPDATE_MS 200U
-#define AMR_UI_SERIAL_LOG_MS 1000U
+#define AMR_UI_SERIAL_LOG_MS 2000U
 #define AMR_UI_OLED_RETRY_MS 2000U
 
 static uint32_t app_ui_last_update_ms = 0U;
@@ -106,9 +107,17 @@ static void App_UI_BuildLines(char line1[22], char line2[22], char line3[22], ch
     (void)snprintf(line3, 22U, "ENC:L%ld R%ld",
                    (long)sample.raw_left_delta,
                    (long)sample.raw_right_delta);
-    (void)snprintf(line4, 22U, "PWM:L%d R%d",
-                   (int)command.left_duty,
-                   (int)command.right_duty);
+    if (state == AMR_STATE_RETURN)
+    {
+        (void)snprintf(line4, 22U, "RET:%u",
+                       (unsigned int)ReturnPath_Count());
+    }
+    else
+    {
+        (void)snprintf(line4, 22U, "PWM:L%d R%d",
+                       (int)command.left_duty,
+                       (int)command.right_duty);
+    }
 }
 
 static void App_UI_TryOledInit(uint32_t now_ms)

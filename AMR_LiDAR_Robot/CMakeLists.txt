@@ -58,6 +58,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/app_odometry.c
     Core/Src/app_obstacle.c
     Core/Src/app_obstacle_motor.c
+    Core/Src/app_return_path.c
     Core/Src/app_safety.c
     Core/Src/app_servo.c
     Core/Src/app_servo_scan_obstacle.c

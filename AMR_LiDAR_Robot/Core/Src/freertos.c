@@ -36,6 +36,7 @@
 #include "app_lidar.h"
 #if APP_ENABLE_LIDAR_OBSTACLE_AVOIDANCE_TEST
 #include "app_lidar_obstacle_avoidance.h"
+#include "app_return_path.h"
 #endif
 #include "app_lidar_stop_check.h"
 #if APP_ENABLE_MOTOR_FORCED_SPIN_CHECK_TEST
@@ -163,6 +164,7 @@ typedef void (*App_ChassisCommand_t)(int16_t duty);
 #define I2C_BASELINE_SCL_PIN GPIO_PIN_8
 #define I2C_BASELINE_SDA_GPIO_PORT GPIOB
 #define I2C_BASELINE_SDA_PIN GPIO_PIN_9
+#define AMR_RUNTIME_PERIOD_MS 20U
 
 /* USER CODE END PD */
 
@@ -193,7 +195,7 @@ const osThreadAttr_t lidarTask_attributes = {
 osThreadId_t imuTaskHandle;
 const osThreadAttr_t imuTask_attributes = {
   .name = "imuTask",
-  .stack_size = 256 * 4,
+  .stack_size = 512 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for oledTask */
@@ -207,8 +209,8 @@ const osThreadAttr_t oledTask_attributes = {
 osThreadId_t controlTaskHandle;
 const osThreadAttr_t controlTask_attributes = {
   .name = "controlTask",
-  .stack_size = 512 * 4,
-  .priority = (osPriority_t) osPriorityNormal,
+  .stack_size = 1024 * 4,
+  .priority = (osPriority_t) osPriorityHigh,
 };
 
 /* Private function prototypes -----------------------------------------------*/
@@ -560,12 +562,11 @@ void StartTask05(void *argument)
   AMR_Init();
   App_LidarObstacleAvoidance_Init();
   Odom_Init();
+  ReturnPath_Init();
   App_Safety_Init();
-  uint32_t last_return_log_ms = 0U;
   for(;;)
   {
     AMR_State_t amr_state;
-    uint32_t now_ms = HAL_GetTick();
 
     AMR_StateMachine_Update();
     Odom_Update();
@@ -574,18 +575,25 @@ void StartTask05(void *argument)
 
     if ((amr_state == AMR_STATE_EXPLORE) || (amr_state == AMR_STATE_AVOID))
     {
-      App_LidarObstacleAvoidance_Task();
+      App_LidarObstacleAvoidance_Update();
     }
     else if (amr_state == AMR_STATE_RETURN)
     {
-      if ((last_return_log_ms == 0U) || ((now_ms - last_return_log_ms) >= 1000U))
+      ReturnExecutor_Update();
+    }
+    else if (amr_state == AMR_STATE_IDLE)
+    {
+      if (ReturnExecutor_GetState() == RETURN_EXEC_RUNNING)
       {
-        last_return_log_ms = now_ms;
-        APP_LOG("[AMR] RETURN mode placeholder");
+        ReturnExecutor_Stop();
       }
     }
+    else if ((amr_state == AMR_STATE_FAULT) || (amr_state == AMR_STATE_ESTOP))
+    {
+      ReturnExecutor_Stop();
+    }
 
-    osDelay(50);
+    osDelay(AMR_RUNTIME_PERIOD_MS);
   }
 #elif APP_ENABLE_NO_SERVO_OBSTACLE_TEST
   APP_LOG("[APP] NoServoObstacleAvoidance: ultrasonic-only backup/turn obstacle avoidance enabled");

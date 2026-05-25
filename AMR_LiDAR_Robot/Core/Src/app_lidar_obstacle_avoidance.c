@@ -2,6 +2,7 @@
 
 #include "amr_system.h"
 #include "app_lidar.h"
+#include "app_return_path.h"
 #include "bringup_log.h"
 #include "chassis.h"
 #include "motor_driver.h"
@@ -18,6 +19,7 @@
 #define LIDAR_OBS_BACKUP_MS 450U
 #define LIDAR_OBS_TURN_MS 1000U
 #define LIDAR_OBS_RECOVER_MS 200U
+#define LIDAR_OBS_FORWARD_RECORD_MS 500U
 #define LIDAR_OBS_FORWARD_LEFT_DUTY 482
 #define LIDAR_OBS_FORWARD_RIGHT_DUTY 500
 #define LIDAR_OBS_TURN_DUTY 360
@@ -77,6 +79,7 @@ static void App_LidarObstacleAvoidance_ApplyStop(void);
 static void App_LidarObstacleAvoidance_ApplyForward(void);
 static void App_LidarObstacleAvoidance_ApplyBackup(void);
 static void App_LidarObstacleAvoidance_ApplyTurn(void);
+static void App_LidarObstacleAvoidance_RecordStateAction(LidarObsState state);
 static const char *App_LidarObstacleAvoidance_StateName(LidarObsState state);
 static const char *App_LidarObstacleAvoidance_ReasonName(LidarObsReason reason);
 static uint32_t App_LidarObstacleAvoidance_ElapsedMs(uint32_t now_ms, uint32_t then_ms);
@@ -360,14 +363,17 @@ static void App_LidarObstacleAvoidance_EnterState(LidarObsState state,
         case LIDAR_OBS_STATE_DRIVE_FORWARD:
             lidar_obs_front_invalid_count = 0U;
             App_LidarObstacleAvoidance_ApplyForward();
+            App_LidarObstacleAvoidance_RecordStateAction(state);
             break;
 
         case LIDAR_OBS_STATE_BACKUP:
             App_LidarObstacleAvoidance_ApplyBackup();
+            App_LidarObstacleAvoidance_RecordStateAction(state);
             break;
 
         case LIDAR_OBS_STATE_TURN:
             App_LidarObstacleAvoidance_ApplyTurn();
+            App_LidarObstacleAvoidance_RecordStateAction(state);
             break;
 
         case LIDAR_OBS_STATE_START_DELAY:
@@ -461,6 +467,43 @@ static void App_LidarObstacleAvoidance_ApplyBackup(void)
 static void App_LidarObstacleAvoidance_ApplyTurn(void)
 {
     Chassis_SetRaw(LIDAR_OBS_TURN_DUTY, (int16_t)-LIDAR_OBS_TURN_DUTY);
+}
+
+static void App_LidarObstacleAvoidance_RecordStateAction(LidarObsState state)
+{
+    AMR_State_t amr_state = AMR_GetState();
+
+    if ((amr_state != AMR_STATE_EXPLORE) && (amr_state != AMR_STATE_AVOID))
+    {
+        return;
+    }
+
+    switch (state)
+    {
+        case LIDAR_OBS_STATE_DRIVE_FORWARD:
+            ReturnPath_Record(PATH_ACT_FORWARD,
+                              LIDAR_OBS_FORWARD_RECORD_MS,
+                              LIDAR_OBS_FORWARD_LEFT_DUTY,
+                              LIDAR_OBS_FORWARD_RIGHT_DUTY);
+            break;
+
+        case LIDAR_OBS_STATE_BACKUP:
+            ReturnPath_Record(PATH_ACT_BACKUP,
+                              LIDAR_OBS_BACKUP_MS,
+                              (int16_t)-LIDAR_OBS_BACKUP_DUTY,
+                              (int16_t)-LIDAR_OBS_BACKUP_DUTY);
+            break;
+
+        case LIDAR_OBS_STATE_TURN:
+            ReturnPath_Record(PATH_ACT_TURN_RIGHT,
+                              LIDAR_OBS_TURN_MS,
+                              LIDAR_OBS_TURN_DUTY,
+                              (int16_t)-LIDAR_OBS_TURN_DUTY);
+            break;
+
+        default:
+            break;
+    }
 }
 
 static const char *App_LidarObstacleAvoidance_StateName(LidarObsState state)
