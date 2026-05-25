@@ -14,11 +14,11 @@
 #define APP_PI_RUN_MS 5000U
 #define APP_PI_WAIT_LOG_MS 1000U
 
-#define APP_PI_TARGET_COUNTS_PER_SAMPLE 900
+#define APP_PI_TARGET_COUNTS_PER_SAMPLE 800
 #define APP_PI_BASE_DUTY 420
 #define APP_PI_DUTY_MIN 0
 #define APP_PI_DUTY_MAX 500
-#define APP_PI_KP_X100 20
+#define APP_PI_KP_X100 5
 #define APP_PI_KI_X100 0
 #define APP_PI_INTEGRAL_LIMIT 2000
 
@@ -37,6 +37,7 @@ typedef enum
 typedef struct
 {
     int32_t integral;
+    int32_t filtered_counts;
     int16_t duty;
 } AppPiWheelState;
 
@@ -58,6 +59,7 @@ static int32_t App_WheelSpeedPiTest_DeltaWithPeriod(uint32_t current,
                                                     uint32_t period);
 static int32_t App_WheelSpeedPiTest_AbsI32(int32_t value);
 static int32_t App_WheelSpeedPiTest_ClampI32(int32_t value, int32_t min_value, int32_t max_value);
+static int32_t App_WheelSpeedPiTest_FilterMeasurement(AppPiWheelState *wheel, int32_t measured_counts);
 static int16_t App_WheelSpeedPiTest_UpdateWheel(AppPiWheelState *wheel, int32_t measured_counts);
 static void App_WheelSpeedPiTest_ResetControl(void);
 static void App_WheelSpeedPiTest_StopComplete(void);
@@ -166,22 +168,26 @@ void App_WheelSpeedPiTest_Task(void *argument)
                     int32_t right_delta = App_WheelSpeedPiTest_DeltaWithPeriod(right_count,
                                                                                 app_pi_prev_right,
                                                                                 APP_PI_RIGHT_TIM->Init.Period);
-                    int32_t measured_left = App_WheelSpeedPiTest_AbsI32(left_delta);
-                    int32_t measured_right = App_WheelSpeedPiTest_AbsI32(right_delta);
-                    int32_t err_left = APP_PI_TARGET_COUNTS_PER_SAMPLE - measured_left;
-                    int32_t err_right = APP_PI_TARGET_COUNTS_PER_SAMPLE - measured_right;
-                    int16_t pwm_left = App_WheelSpeedPiTest_UpdateWheel(&app_pi_left, measured_left);
-                    int16_t pwm_right = App_WheelSpeedPiTest_UpdateWheel(&app_pi_right, measured_right);
+                    int32_t raw_left = App_WheelSpeedPiTest_AbsI32(left_delta);
+                    int32_t raw_right = App_WheelSpeedPiTest_AbsI32(right_delta);
+                    int32_t filtered_left = App_WheelSpeedPiTest_FilterMeasurement(&app_pi_left, raw_left);
+                    int32_t filtered_right = App_WheelSpeedPiTest_FilterMeasurement(&app_pi_right, raw_right);
+                    int32_t err_left = APP_PI_TARGET_COUNTS_PER_SAMPLE - filtered_left;
+                    int32_t err_right = APP_PI_TARGET_COUNTS_PER_SAMPLE - filtered_right;
+                    int16_t pwm_left = App_WheelSpeedPiTest_UpdateWheel(&app_pi_left, filtered_left);
+                    int16_t pwm_right = App_WheelSpeedPiTest_UpdateWheel(&app_pi_right, filtered_right);
 
                     app_pi_prev_left = left_count;
                     app_pi_prev_right = right_count;
                     app_pi_last_sample_ms = now_ms;
 
                     Chassis_SetRaw(pwm_left, pwm_right);
-                    APP_LOG("APP PI: target=%d measL=%ld measR=%ld pwmL=%d pwmR=%d errL=%ld errR=%ld",
+                    APP_LOG("APP PI: target=%d rawL=%ld rawR=%ld filtL=%ld filtR=%ld pwmL=%d pwmR=%d errL=%ld errR=%ld",
                             APP_PI_TARGET_COUNTS_PER_SAMPLE,
-                            (long)measured_left,
-                            (long)measured_right,
+                            (long)raw_left,
+                            (long)raw_right,
+                            (long)filtered_left,
+                            (long)filtered_right,
                             pwm_left,
                             pwm_right,
                             (long)err_left,
@@ -293,6 +299,13 @@ static int32_t App_WheelSpeedPiTest_ClampI32(int32_t value, int32_t min_value, i
     return value;
 }
 
+static int32_t App_WheelSpeedPiTest_FilterMeasurement(AppPiWheelState *wheel, int32_t measured_counts)
+{
+    wheel->filtered_counts = ((wheel->filtered_counts * 3) + measured_counts) / 4;
+
+    return wheel->filtered_counts;
+}
+
 static int16_t App_WheelSpeedPiTest_UpdateWheel(AppPiWheelState *wheel, int32_t measured_counts)
 {
     int32_t error = APP_PI_TARGET_COUNTS_PER_SAMPLE - measured_counts;
@@ -313,8 +326,10 @@ static int16_t App_WheelSpeedPiTest_UpdateWheel(AppPiWheelState *wheel, int32_t 
 static void App_WheelSpeedPiTest_ResetControl(void)
 {
     app_pi_left.integral = 0;
+    app_pi_left.filtered_counts = 0;
     app_pi_left.duty = APP_PI_BASE_DUTY;
     app_pi_right.integral = 0;
+    app_pi_right.filtered_counts = 0;
     app_pi_right.duty = APP_PI_BASE_DUTY;
 }
 
