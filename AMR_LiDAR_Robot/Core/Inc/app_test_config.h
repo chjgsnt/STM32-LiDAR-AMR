@@ -4,13 +4,12 @@
 /*
  * CENTRAL TEST/RUN MODE SELECTOR.
  *
- * Change APP_ACTIVE_MODE only. The lower-level enable flags are derived from
- * this selector so test builds do not require editing several independent
- * macros.
+ * This demo build fixes APP_ACTIVE_MODE to LidarObstacleStopCheck. The
+ * lower-level enable flags are derived from this selector so test builds do
+ * not require editing several independent macros.
  *
- * Current bench mode is APP_MODE_MOTOR_FORCED_SPIN_CHECK. It runs only the
- * direct motor driver chain and does not depend on LiDAR, IMU, or obstacle
- * logic.
+ * MotorForcedSpinCheck is retained as an available mode, but it is not the
+ * active mode for this demo.
  *
  * Use APP_MODE_LIDAR_OBSTACLE_GROUND_TEST only for a supervised short ground
  * test after the lifted-wheel test has passed. Keep the 3 second start delay,
@@ -26,9 +25,11 @@
 #define APP_MODE_LIDAR_OBSTACLE_STOP_CHECK  6
 #define APP_MODE_MOTOR_FORCED_SPIN_CHECK    7
 
-#ifndef APP_ACTIVE_MODE
-#define APP_ACTIVE_MODE APP_MODE_MOTOR_FORCED_SPIN_CHECK
+#ifdef APP_ACTIVE_MODE
+#warning "APP_ACTIVE_MODE is fixed to APP_MODE_LIDAR_OBSTACLE_STOP_CHECK for this demo; direct override ignored"
+#undef APP_ACTIVE_MODE
 #endif
+#define APP_ACTIVE_MODE APP_MODE_LIDAR_OBSTACLE_STOP_CHECK
 
 #if (APP_ACTIVE_MODE < APP_MODE_LIDAR_OBSTACLE_DRY_RUN) || (APP_ACTIVE_MODE > APP_MODE_MOTOR_FORCED_SPIN_CHECK)
 #error "APP_ACTIVE_MODE has an invalid value"
@@ -60,13 +61,15 @@
 /*
  * LiDAR stop-check motor output arm.
  *
- * Keep 0 for stop-only debug: clear-forward is logged as would_clear_forward,
- * but the wheels stay stopped. Set to nonzero only after confirming the stop
- * path on the bench.
+ * Fixed to 1 for this demo: clear-forward drives the wheels with the
+ * LidarObstacleStopCheck forward command, while fail-stop states still command
+ * a stop.
  */
-#ifndef APP_LIDAR_STOP_CHECK_MOTOR_OUTPUT_ENABLE
-#define APP_LIDAR_STOP_CHECK_MOTOR_OUTPUT_ENABLE 1
+#ifdef APP_LIDAR_STOP_CHECK_MOTOR_OUTPUT_ENABLE
+#warning "APP_LIDAR_STOP_CHECK_MOTOR_OUTPUT_ENABLE is fixed to 1 for this demo; direct override ignored"
+#undef APP_LIDAR_STOP_CHECK_MOTOR_OUTPUT_ENABLE
 #endif
+#define APP_LIDAR_STOP_CHECK_MOTOR_OUTPUT_ENABLE 1
 
 /*
  * TEST OPERATOR SPEED SETTINGS.

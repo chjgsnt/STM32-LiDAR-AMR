@@ -1,12 +1,15 @@
 #include "app_motor_forced_spin_check.h"
 
+#include "app_test_config.h"
+
+#if APP_MOTOR_FORCED_SPIN_CHECK_ENABLE
+
 #include "bringup_log.h"
 #include "cmsis_os.h"
 #include "motor_driver.h"
 
 #include <stdint.h>
 
-#define APP_MOTOR_FORCED_SPIN_DUTY 350
 #define APP_MOTOR_FORCED_SPIN_INITIAL_STOP_MS 2000U
 #define APP_MOTOR_FORCED_SPIN_RUN_MS 2000U
 #define APP_MOTOR_FORCED_SPIN_BETWEEN_STOP_MS 1000U
@@ -21,26 +24,41 @@ static uint32_t App_MotorForcedSpinCheck_StepMs(uint32_t elapsed_ms, uint32_t du
 
 void App_MotorForcedSpinCheck_Run(void)
 {
-    APP_LOG("[MOTOR_FORCED_SPIN] start duty=%d sequence=stop2s,A2s,stop1s,B2s,stop1s,AB2s",
-            APP_MOTOR_FORCED_SPIN_DUTY);
+    APP_LOG("[MOTOR_FORCED_SPIN] start target=high-duty left-right sign combo sequence=stop2s,AnegBpos500,stop1s,AnegBneg500,stop1s,AposBpos500,stop1s,AposBneg500,stop1s,trim,stop1s,stronger,stop1s");
 
     MotorDriver_Init();
 
     App_MotorForcedSpinCheck_StopPhase("initial_stop", APP_MOTOR_FORCED_SPIN_INITIAL_STOP_MS);
-    App_MotorForcedSpinCheck_RunPhase("motor_a_forward",
-                                      APP_MOTOR_FORCED_SPIN_DUTY,
-                                      0,
+    App_MotorForcedSpinCheck_RunPhase("combo_Aneg_Bpos_500",
+                                      -500,
+                                      500,
                                       APP_MOTOR_FORCED_SPIN_RUN_MS);
-    App_MotorForcedSpinCheck_StopPhase("between_a_b", APP_MOTOR_FORCED_SPIN_BETWEEN_STOP_MS);
-    App_MotorForcedSpinCheck_RunPhase("motor_b_forward",
-                                      0,
-                                      APP_MOTOR_FORCED_SPIN_DUTY,
+    App_MotorForcedSpinCheck_StopPhase("after_combo_Aneg_Bpos_500", APP_MOTOR_FORCED_SPIN_BETWEEN_STOP_MS);
+    App_MotorForcedSpinCheck_RunPhase("combo_Aneg_Bneg_500",
+                                      -500,
+                                      -500,
                                       APP_MOTOR_FORCED_SPIN_RUN_MS);
-    App_MotorForcedSpinCheck_StopPhase("between_b_both", APP_MOTOR_FORCED_SPIN_BETWEEN_STOP_MS);
-    App_MotorForcedSpinCheck_RunPhase("both_forward",
-                                      APP_MOTOR_FORCED_SPIN_DUTY,
-                                      APP_MOTOR_FORCED_SPIN_DUTY,
+    App_MotorForcedSpinCheck_StopPhase("after_combo_Aneg_Bneg_500", APP_MOTOR_FORCED_SPIN_BETWEEN_STOP_MS);
+    App_MotorForcedSpinCheck_RunPhase("combo_Apos_Bpos_500",
+                                      500,
+                                      500,
                                       APP_MOTOR_FORCED_SPIN_RUN_MS);
+    App_MotorForcedSpinCheck_StopPhase("after_combo_Apos_Bpos_500", APP_MOTOR_FORCED_SPIN_BETWEEN_STOP_MS);
+    App_MotorForcedSpinCheck_RunPhase("combo_Apos_Bneg_500",
+                                      500,
+                                      -500,
+                                      APP_MOTOR_FORCED_SPIN_RUN_MS);
+    App_MotorForcedSpinCheck_StopPhase("after_combo_Apos_Bneg_500", APP_MOTOR_FORCED_SPIN_BETWEEN_STOP_MS);
+    App_MotorForcedSpinCheck_RunPhase("forward_trim_test",
+                                      -520,
+                                      600,
+                                      APP_MOTOR_FORCED_SPIN_RUN_MS);
+    App_MotorForcedSpinCheck_StopPhase("after_forward_trim_test", APP_MOTOR_FORCED_SPIN_BETWEEN_STOP_MS);
+    App_MotorForcedSpinCheck_RunPhase("stronger_forward_test",
+                                      -600,
+                                      600,
+                                      APP_MOTOR_FORCED_SPIN_RUN_MS);
+    App_MotorForcedSpinCheck_StopPhase("after_stronger_forward_test", APP_MOTOR_FORCED_SPIN_BETWEEN_STOP_MS);
 
     MotorDriver_StopAll();
     APP_LOG("[MOTOR_FORCED_SPIN] done final_stop=1");
@@ -50,7 +68,7 @@ static void App_MotorForcedSpinCheck_StopPhase(const char *phase, uint32_t durat
 {
     uint32_t elapsed_ms = 0U;
 
-    APP_LOG("[MOTOR_FORCED_SPIN] phase=%s action=STOP duration_ms=%lu",
+    APP_LOG("[MOTOR_FORCED_SPIN] phase=%s motor_a_cmd=0 motor_b_cmd=0 duration_ms=%lu",
             phase,
             (unsigned long)duration_ms);
 
@@ -71,7 +89,7 @@ static void App_MotorForcedSpinCheck_RunPhase(const char *phase,
 {
     uint32_t elapsed_ms = 0U;
 
-    APP_LOG("[MOTOR_FORCED_SPIN] phase=%s action=RUN motor_a=%d motor_b=%d duration_ms=%lu",
+    APP_LOG("[MOTOR_FORCED_SPIN] phase=%s motor_a_cmd=%d motor_b_cmd=%d duration_ms=%lu",
             phase,
             (int)motor_a_duty,
             (int)motor_b_duty,
@@ -99,3 +117,11 @@ static uint32_t App_MotorForcedSpinCheck_StepMs(uint32_t elapsed_ms, uint32_t du
 
     return remaining_ms;
 }
+
+#else
+
+void App_MotorForcedSpinCheck_Run(void)
+{
+}
+
+#endif
