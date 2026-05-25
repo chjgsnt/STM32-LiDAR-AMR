@@ -169,6 +169,7 @@ void App_Lidar_Init(void)
     app_lidar_status.right_valid = 0U;
     app_lidar_status.nearest_angle_deg = 0.0f;
     app_lidar_status.nearest_distance_mm = APP_LIDAR_STATUS_DISTANCE_INVALID;
+    app_lidar_status.last_update_ms = 0U;
     App_Lidar_ResetParser();
     app_lidar_initialized = true;
 
@@ -777,6 +778,8 @@ static void App_Lidar_CopySnapshot(App_Lidar_Snapshot_t *snapshot)
 
 static void App_Lidar_UpdatePublishedStatus(const App_Lidar_Snapshot_t *snapshot)
 {
+    uint32_t now_ms;
+
     if (snapshot == NULL)
     {
         return;
@@ -784,6 +787,14 @@ static void App_Lidar_UpdatePublishedStatus(const App_Lidar_Snapshot_t *snapshot
 
     uint32_t primask = __get_PRIMASK();
     __disable_irq();
+
+    now_ms = HAL_GetTick();
+
+    if ((snapshot->rx_bytes != app_lidar_status.rx_bytes) ||
+        (snapshot->valid_points != app_lidar_status.valid_points))
+    {
+        app_lidar_status.last_update_ms = now_ms;
+    }
 
     app_lidar_status.ready = snapshot->ready;
     app_lidar_status.rx_bytes = snapshot->rx_bytes;

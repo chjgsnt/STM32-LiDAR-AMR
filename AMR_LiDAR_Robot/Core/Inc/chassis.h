@@ -23,6 +23,13 @@ extern "C" {
 #define CHASSIS_GROUND_TEST_DUTY (500)
 #define CHASSIS_MAX_OPENLOOP_DUTY (600)
 
+typedef struct
+{
+    int16_t left_duty;
+    int16_t right_duty;
+    uint32_t last_update_ms;
+} ChassisCommandStatus_t;
+
 void Chassis_Init(void);
 void Chassis_Stop(void);
 void Chassis_SetRaw(int16_t left_duty, int16_t right_duty);
@@ -30,6 +37,7 @@ void Chassis_Forward(int16_t duty);
 void Chassis_Backward(int16_t duty);
 void Chassis_TurnLeft(int16_t duty);
 void Chassis_TurnRight(int16_t duty);
+void Chassis_GetLastCommand(ChassisCommandStatus_t *status);
 
 #if APP_LIDAR_OBSTACLE_STOP_CHECK_ENABLE && \
     !defined(APP_LIDAR_STOP_CHECK_MOTOR_OWNER) && \

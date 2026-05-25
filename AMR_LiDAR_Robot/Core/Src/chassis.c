@@ -11,6 +11,9 @@
 static int16_t Chassis_ClampDuty(int16_t duty);
 static int16_t Chassis_ApplySign(int16_t duty, int16_t sign);
 static void Chassis_LogStopExecuted(void);
+static void Chassis_RecordCommand(int16_t left_duty, int16_t right_duty);
+
+static ChassisCommandStatus_t chassis_last_command = {0, 0, 0U};
 
 void Chassis_Init(void)
 {
@@ -20,12 +23,14 @@ void Chassis_Init(void)
 
 void Chassis_Stop(void)
 {
+    Chassis_RecordCommand(0, 0);
     MotorDriver_StopAll();
     Chassis_LogStopExecuted();
 }
 
 void Chassis_SetRaw(int16_t left_duty, int16_t right_duty)
 {
+    Chassis_RecordCommand(left_duty, right_duty);
     MotorDriver_SetMotorA(Chassis_ApplySign(left_duty, CHASSIS_LEFT_SIGN));
     MotorDriver_SetMotorB(Chassis_ApplySign(right_duty, CHASSIS_RIGHT_SIGN));
 }
@@ -48,6 +53,16 @@ void Chassis_TurnLeft(int16_t duty)
 void Chassis_TurnRight(int16_t duty)
 {
     Chassis_SetRaw(duty, (int16_t)-duty);
+}
+
+void Chassis_GetLastCommand(ChassisCommandStatus_t *status)
+{
+    if (status == NULL)
+    {
+        return;
+    }
+
+    *status = chassis_last_command;
 }
 
 static int16_t Chassis_ClampDuty(int16_t duty)
@@ -83,6 +98,13 @@ static int16_t Chassis_ApplySign(int16_t duty, int16_t sign)
     }
 
     return duty;
+}
+
+static void Chassis_RecordCommand(int16_t left_duty, int16_t right_duty)
+{
+    chassis_last_command.left_duty = Chassis_ClampDuty(left_duty);
+    chassis_last_command.right_duty = Chassis_ClampDuty(right_duty);
+    chassis_last_command.last_update_ms = HAL_GetTick();
 }
 
 static void Chassis_LogStopExecuted(void)

@@ -61,6 +61,12 @@ static void SSD1306_GetGlyph(char c, uint8_t glyph[5])
         src = g;
         break;
     }
+    case '1':
+    {
+        static const uint8_t g[5] = {0x00U, 0x42U, 0x7FU, 0x40U, 0x00U};
+        src = g;
+        break;
+    }
     case '2':
     {
         static const uint8_t g[5] = {0x62U, 0x51U, 0x49U, 0x49U, 0x46U};
@@ -73,9 +79,63 @@ static void SSD1306_GetGlyph(char c, uint8_t glyph[5])
         src = g;
         break;
     }
+    case '4':
+    {
+        static const uint8_t g[5] = {0x18U, 0x14U, 0x12U, 0x7FU, 0x10U};
+        src = g;
+        break;
+    }
+    case '5':
+    {
+        static const uint8_t g[5] = {0x27U, 0x45U, 0x45U, 0x45U, 0x39U};
+        src = g;
+        break;
+    }
+    case '6':
+    {
+        static const uint8_t g[5] = {0x3CU, 0x4AU, 0x49U, 0x49U, 0x30U};
+        src = g;
+        break;
+    }
+    case '7':
+    {
+        static const uint8_t g[5] = {0x01U, 0x71U, 0x09U, 0x05U, 0x03U};
+        src = g;
+        break;
+    }
+    case '8':
+    {
+        static const uint8_t g[5] = {0x36U, 0x49U, 0x49U, 0x49U, 0x36U};
+        src = g;
+        break;
+    }
+    case '9':
+    {
+        static const uint8_t g[5] = {0x06U, 0x49U, 0x49U, 0x29U, 0x1EU};
+        src = g;
+        break;
+    }
     case ':':
     {
         static const uint8_t g[5] = {0x00U, 0x36U, 0x36U, 0x00U, 0x00U};
+        src = g;
+        break;
+    }
+    case '-':
+    {
+        static const uint8_t g[5] = {0x08U, 0x08U, 0x08U, 0x08U, 0x08U};
+        src = g;
+        break;
+    }
+    case 'A':
+    {
+        static const uint8_t g[5] = {0x7EU, 0x11U, 0x11U, 0x11U, 0x7EU};
+        src = g;
+        break;
+    }
+    case 'B':
+    {
+        static const uint8_t g[5] = {0x7FU, 0x49U, 0x49U, 0x49U, 0x36U};
         src = g;
         break;
     }
@@ -97,9 +157,33 @@ static void SSD1306_GetGlyph(char c, uint8_t glyph[5])
         src = g;
         break;
     }
+    case 'F':
+    {
+        static const uint8_t g[5] = {0x7FU, 0x09U, 0x09U, 0x09U, 0x01U};
+        src = g;
+        break;
+    }
+    case 'G':
+    {
+        static const uint8_t g[5] = {0x3EU, 0x41U, 0x49U, 0x49U, 0x7AU};
+        src = g;
+        break;
+    }
+    case 'H':
+    {
+        static const uint8_t g[5] = {0x7FU, 0x08U, 0x08U, 0x08U, 0x7FU};
+        src = g;
+        break;
+    }
     case 'I':
     {
         static const uint8_t g[5] = {0x00U, 0x41U, 0x7FU, 0x41U, 0x00U};
+        src = g;
+        break;
+    }
+    case 'J':
+    {
+        static const uint8_t g[5] = {0x20U, 0x40U, 0x41U, 0x3FU, 0x01U};
         src = g;
         break;
     }
@@ -115,9 +199,69 @@ static void SSD1306_GetGlyph(char c, uint8_t glyph[5])
         src = g;
         break;
     }
+    case 'M':
+    {
+        static const uint8_t g[5] = {0x7FU, 0x02U, 0x0CU, 0x02U, 0x7FU};
+        src = g;
+        break;
+    }
+    case 'N':
+    {
+        static const uint8_t g[5] = {0x7FU, 0x04U, 0x08U, 0x10U, 0x7FU};
+        src = g;
+        break;
+    }
     case 'O':
     {
         static const uint8_t g[5] = {0x3EU, 0x41U, 0x41U, 0x41U, 0x3EU};
+        src = g;
+        break;
+    }
+    case 'P':
+    {
+        static const uint8_t g[5] = {0x7FU, 0x09U, 0x09U, 0x09U, 0x06U};
+        src = g;
+        break;
+    }
+    case 'R':
+    {
+        static const uint8_t g[5] = {0x7FU, 0x09U, 0x19U, 0x29U, 0x46U};
+        src = g;
+        break;
+    }
+    case 'S':
+    {
+        static const uint8_t g[5] = {0x46U, 0x49U, 0x49U, 0x49U, 0x31U};
+        src = g;
+        break;
+    }
+    case 'T':
+    {
+        static const uint8_t g[5] = {0x01U, 0x01U, 0x7FU, 0x01U, 0x01U};
+        src = g;
+        break;
+    }
+    case 'U':
+    {
+        static const uint8_t g[5] = {0x3FU, 0x40U, 0x40U, 0x40U, 0x3FU};
+        src = g;
+        break;
+    }
+    case 'V':
+    {
+        static const uint8_t g[5] = {0x1FU, 0x20U, 0x40U, 0x20U, 0x1FU};
+        src = g;
+        break;
+    }
+    case 'W':
+    {
+        static const uint8_t g[5] = {0x7FU, 0x20U, 0x18U, 0x20U, 0x7FU};
+        src = g;
+        break;
+    }
+    case 'Y':
+    {
+        static const uint8_t g[5] = {0x07U, 0x08U, 0x70U, 0x08U, 0x07U};
         src = g;
         break;
     }

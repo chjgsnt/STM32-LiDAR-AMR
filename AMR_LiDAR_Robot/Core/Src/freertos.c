@@ -25,6 +25,11 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "amr_system.h"
+#include "app_odometry.h"
+#include "app_safety.h"
+#include "app_serial_command.h"
+#include "app_ui.h"
 #if APP_ENABLE_ENCODER_BRINGUP_TEST
 #include "app_encoder_bringup.h"
 #endif
@@ -53,7 +58,7 @@
 #include "i2c.h"
 #include "i2c_scan.h"
 #include "mpu6500.h"
-#if APP_ENABLE_CHASSIS_OPENLOOP_TEST || APP_ENABLE_CHASSIS_DIRECTION_CAL_TEST || APP_ENABLE_CHASSIS_GROUND_TRACTION_TEST || APP_ENABLE_CHASSIS_SPEED_BALANCE_TEST || APP_ENABLE_WHEEL_SPEED_PI_TEST || APP_ENABLE_HEADING_HOLD_TEST
+#if APP_ENABLE_CHASSIS_OPENLOOP_TEST || APP_ENABLE_CHASSIS_DIRECTION_CAL_TEST || APP_ENABLE_CHASSIS_GROUND_TRACTION_TEST || APP_ENABLE_CHASSIS_SPEED_BALANCE_TEST || APP_ENABLE_WHEEL_SPEED_PI_TEST || APP_ENABLE_HEADING_HOLD_TEST || APP_ENABLE_LIDAR_OBSTACLE_AVOIDANCE_TEST
 #include "chassis.h"
 #endif
 #if (APP_ENABLE_MOTOR_TEST && !APP_ENABLE_MOTOR_GPIO_STATIC_TEST) || APP_ENABLE_CHASSIS_OPENLOOP_TEST || APP_ENABLE_CHASSIS_DIRECTION_CAL_TEST || APP_ENABLE_CHASSIS_GROUND_TRACTION_TEST || APP_ENABLE_CHASSIS_SPEED_BALANCE_TEST || APP_ENABLE_WHEEL_SPEED_PI_TEST || APP_ENABLE_HEADING_HOLD_TEST
@@ -382,6 +387,7 @@ void MX_FREERTOS_Init(void) {
 void StartDefaultTask(void *argument)
 {
   /* USER CODE BEGIN StartDefaultTask */
+  (void)argument;
   LOG_INFO("FreeRTOS started.");
 #if APP_ENABLE_MOTOR_FORCED_SPIN_CHECK_TEST
   APP_LOG("[APP] MotorForcedSpinCheck: default task idle, skipping I2C/IMU bring-up");
@@ -433,6 +439,7 @@ void StartDefaultTask(void *argument)
 void StartTask02(void *argument)
 {
   /* USER CODE BEGIN StartTask02 */
+  (void)argument;
 #if APP_ENABLE_LIDAR_BRINGUP_TEST
   App_Lidar_Init();
 #if APP_LIDAR_OBSTACLE_STOP_CHECK_ENABLE
@@ -478,10 +485,14 @@ void StartTask02(void *argument)
 void StartTask03(void *argument)
 {
   /* USER CODE BEGIN StartTask03 */
+  (void)argument;
+  App_SerialCommand_Init();
+
   /* Infinite loop */
   for(;;)
   {
-    osDelay(1);
+    App_SerialCommand_Task();
+    osDelay(20);
   }
   /* USER CODE END StartTask03 */
 }
@@ -496,10 +507,14 @@ void StartTask03(void *argument)
 void StartTask04(void *argument)
 {
   /* USER CODE BEGIN StartTask04 */
+  (void)argument;
+  App_UI_Init();
+
   /* Infinite loop */
   for(;;)
   {
-    osDelay(1);
+    App_UI_Update();
+    osDelay(50);
   }
   /* USER CODE END StartTask04 */
 }
@@ -514,6 +529,7 @@ void StartTask04(void *argument)
 void StartTask05(void *argument)
 {
   /* USER CODE BEGIN StartTask05 */
+  (void)argument;
   APP_LOG("[APP] active_mode=%s", App_GetActiveModeName());
   APP_LOG("[APP] active_test=%s", App_GetActiveTestName());
 
@@ -538,13 +554,42 @@ void StartTask05(void *argument)
 #elif APP_ENABLE_ENCODER_BRINGUP_TEST
   APP_LOG("[APP] EncoderBringup: encoder count/delta logging enabled");
   App_EncoderBringup_Init();
-  App_EncoderBringup_Task(argument);
+  App_EncoderBringup_Task(NULL);
 #elif APP_ENABLE_LIDAR_OBSTACLE_AVOIDANCE_TEST
   APP_LOG("[APP] lidar obstacle avoidance enabled");
+  AMR_Init();
   App_LidarObstacleAvoidance_Init();
+  Odom_Init();
+  App_Safety_Init();
+  uint32_t last_return_log_ms = 0U;
   for(;;)
   {
-    App_LidarObstacleAvoidance_Task();
+    AMR_State_t amr_state;
+    uint32_t now_ms = HAL_GetTick();
+
+    AMR_StateMachine_Update();
+    Odom_Update();
+    App_Safety_Update();
+    amr_state = AMR_GetState();
+
+    if ((amr_state == AMR_STATE_EXPLORE) || (amr_state == AMR_STATE_AVOID))
+    {
+      App_LidarObstacleAvoidance_Task();
+    }
+    else if (amr_state == AMR_STATE_RETURN)
+    {
+      Chassis_Stop();
+      if ((last_return_log_ms == 0U) || ((now_ms - last_return_log_ms) >= 1000U))
+      {
+        last_return_log_ms = now_ms;
+        APP_LOG("[AMR] RETURN mode placeholder");
+      }
+    }
+    else
+    {
+      Chassis_Stop();
+    }
+
     osDelay(50);
   }
 #elif APP_ENABLE_NO_SERVO_OBSTACLE_TEST
