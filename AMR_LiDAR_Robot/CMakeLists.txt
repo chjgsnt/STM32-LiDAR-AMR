@@ -59,6 +59,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/app_servo.c
     Core/Src/app_servo_scan_obstacle.c
     Core/Src/app_ultrasonic.c
+    Core/Src/app_wheel_speed_pi_test.c
     Core/Src/bringup_log.c
     Core/Src/chassis.c
     Core/Src/i2c_scan.c

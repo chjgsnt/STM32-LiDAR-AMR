@@ -21,6 +21,9 @@
  * verification. It is not the active mode unless APP_ACTIVE_MODE is changed
  * explicitly for that test.
  *
+ * WheelSpeedPiTest is retained as a lifted-wheel-only mode for encoder-based
+ * left/right wheel speed PI verification. It is not the default demo mode.
+ *
  * Use APP_MODE_LIDAR_OBSTACLE_GROUND_TEST only for a supervised short ground
  * test after the lifted-wheel test has passed. Keep the 3 second start delay,
  * 10 second timeout, and emergency power access in place. Do not commit or
@@ -38,6 +41,7 @@
 #define APP_MODE_NO_SERVO_OBSTACLE          9
 #define APP_MODE_LIDAR_OBSTACLE_AVOIDANCE   10
 #define APP_MODE_ENCODER_BRINGUP            11
+#define APP_MODE_WHEEL_SPEED_PI_TEST        12
 
 #ifdef APP_ACTIVE_MODE
 #warning "APP_ACTIVE_MODE is fixed to APP_MODE_LIDAR_OBSTACLE_AVOIDANCE for this demo; direct override ignored"
@@ -45,7 +49,7 @@
 #endif
 #define APP_ACTIVE_MODE APP_MODE_LIDAR_OBSTACLE_AVOIDANCE
 
-#if (APP_ACTIVE_MODE < APP_MODE_LIDAR_OBSTACLE_DRY_RUN) || (APP_ACTIVE_MODE > APP_MODE_ENCODER_BRINGUP)
+#if (APP_ACTIVE_MODE < APP_MODE_LIDAR_OBSTACLE_DRY_RUN) || (APP_ACTIVE_MODE > APP_MODE_WHEEL_SPEED_PI_TEST)
 #error "APP_ACTIVE_MODE has an invalid value"
 #endif
 
@@ -62,6 +66,7 @@
 #define APP_MODE_IS_NO_SERVO_OBSTACLE          (APP_ACTIVE_MODE == APP_MODE_NO_SERVO_OBSTACLE)
 #define APP_MODE_IS_LIDAR_OBSTACLE_AVOIDANCE   (APP_ACTIVE_MODE == APP_MODE_LIDAR_OBSTACLE_AVOIDANCE)
 #define APP_MODE_IS_ENCODER_BRINGUP            (APP_ACTIVE_MODE == APP_MODE_ENCODER_BRINGUP)
+#define APP_MODE_IS_WHEEL_SPEED_PI_TEST        (APP_ACTIVE_MODE == APP_MODE_WHEEL_SPEED_PI_TEST)
 #define APP_MODE_USES_LIDAR_BRINGUP            (APP_MODE_IS_LIDAR_OBSTACLE || APP_MODE_IS_IMU_HEADING_ASSIST_DRY_RUN || APP_MODE_IS_LIDAR_OBSTACLE_AVOIDANCE)
 
 /*
@@ -79,6 +84,7 @@
 #define APP_NO_SERVO_OBSTACLE_ENABLE          APP_MODE_IS_NO_SERVO_OBSTACLE
 #define APP_LIDAR_OBSTACLE_AVOIDANCE_ENABLE   APP_MODE_IS_LIDAR_OBSTACLE_AVOIDANCE
 #define APP_ENCODER_BRINGUP_ENABLE            APP_MODE_IS_ENCODER_BRINGUP
+#define APP_WHEEL_SPEED_PI_TEST_ENABLE        APP_MODE_IS_WHEEL_SPEED_PI_TEST
 
 /*
  * LiDAR stop-check motor output arm.
@@ -367,6 +373,10 @@
 
 #if APP_MODE_IS_ENCODER_BRINGUP
 #warning "APP_ACTIVE_MODE is ENCODER BRINGUP: spin wheels by hand or run a supervised motor test"
+#endif
+
+#if APP_MODE_IS_WHEEL_SPEED_PI_TEST
+#warning "APP_ACTIVE_MODE is WHEEL SPEED PI TEST: lift wheels first, 3s start delay, 5s auto stop"
 #endif
 
 #if APP_IMU_HEADING_ASSIST_LIFTED_WHEEL_TEST_ENABLE

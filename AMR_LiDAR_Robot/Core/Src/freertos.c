@@ -42,6 +42,9 @@
 #if APP_ENABLE_SERVO_SCAN_OBSTACLE_TEST
 #include "app_servo_scan_obstacle.h"
 #endif
+#if APP_ENABLE_WHEEL_SPEED_PI_TEST
+#include "app_wheel_speed_pi_test.h"
+#endif
 #if !APP_LIDAR_OBSTACLE_STOP_CHECK_ENABLE
 #include "app_obstacle.h"
 #include "app_obstacle_motor.h"
@@ -269,19 +272,6 @@ static void App_LogChassisSpeedBalanceStatus(const char *direction_name,
 #endif
 #if APP_ENABLE_WHEEL_SPEED_PI_TEST
 static void App_RunWheelSpeedPiTest(void);
-static void App_RunWheelSpeedPiPhase(const char *direction_name,
-                                     int8_t direction,
-                                     const WheelSpeedController_Config_t *config);
-static void App_LogWheelSpeedPiStatus(const char *direction_name,
-                                      int32_t target_ticks_per_sample,
-                                      int16_t left_duty,
-                                      int16_t right_duty,
-                                      int32_t enc_a,
-                                      int32_t enc_b,
-                                      int32_t delta_a,
-                                      int32_t delta_b,
-                                      const WheelSpeedController_State_t *left_state,
-                                      const WheelSpeedController_State_t *right_state);
 #endif
 #if APP_ENABLE_HEADING_HOLD_TEST
 static void App_RunHeadingHoldTest(void);
@@ -698,6 +688,8 @@ static const char *App_GetActiveModeName(void)
   return "LiDARObstacleAvoidance";
 #elif APP_ACTIVE_MODE == APP_MODE_ENCODER_BRINGUP
   return "EncoderBringup";
+#elif APP_ACTIVE_MODE == APP_MODE_WHEEL_SPEED_PI_TEST
+  return "WheelSpeedPiTest";
 #elif APP_ACTIVE_MODE == APP_MODE_MOTOR_TEST
   return "motor test";
 #elif APP_ACTIVE_MODE == APP_MODE_IMU_TEST
@@ -1218,118 +1210,9 @@ static void App_LogChassisSpeedBalanceStatus(const char *direction_name,
 #if APP_ENABLE_WHEEL_SPEED_PI_TEST
 static void App_RunWheelSpeedPiTest(void)
 {
-  static const WheelSpeedController_Config_t wheel_speed_pi_config = {
-    .target_ticks_per_sample = WHEEL_SPEED_PI_TARGET_TICKS_PER_SAMPLE,
-    .feedforward_duty = WHEEL_SPEED_PI_FEEDFORWARD_DUTY,
-    .kp_num = WHEEL_SPEED_PI_KP_NUM,
-    .ki_num = WHEEL_SPEED_PI_KI_NUM,
-    .gain_den = WHEEL_SPEED_PI_GAIN_DEN,
-    .integral_limit = WHEEL_SPEED_PI_INTEGRAL_LIMIT,
-    .duty_min = WHEEL_SPEED_PI_DUTY_MIN,
-    .duty_max = WHEEL_SPEED_PI_DUTY_MAX,
-  };
-
-  APP_LOG("[PI] wheel speed PI test start");
-
-  Chassis_Init();
-  Chassis_Stop();
-  osDelay(WHEEL_SPEED_PI_INITIAL_STOP_MS);
-
-  MotorDriver_ResetEncoders();
-  App_RunWheelSpeedPiPhase("forward", 1, &wheel_speed_pi_config);
-  Chassis_Stop();
-  osDelay(WHEEL_SPEED_PI_BETWEEN_STOP_MS);
-
-  MotorDriver_ResetEncoders();
-  App_RunWheelSpeedPiPhase("backward", -1, &wheel_speed_pi_config);
-  Chassis_Stop();
-
-  APP_LOG("[PI] wheel speed PI test done");
-}
-
-static void App_RunWheelSpeedPiPhase(const char *direction_name,
-                                     int8_t direction,
-                                     const WheelSpeedController_Config_t *config)
-{
-  WheelSpeedController_State_t left_state;
-  WheelSpeedController_State_t right_state;
-
-  WheelSpeedController_Reset(&left_state);
-  WheelSpeedController_Reset(&right_state);
-
-  int32_t previous_enc_a = MotorDriver_GetEncoderA();
-  int32_t previous_enc_b = MotorDriver_GetEncoderB();
-  int16_t left_mag = config->feedforward_duty;
-  int16_t right_mag = config->feedforward_duty;
-  int16_t left_cmd = (direction > 0) ? left_mag : (int16_t)-left_mag;
-  int16_t right_cmd = (direction > 0) ? right_mag : (int16_t)-right_mag;
-
-  Chassis_SetRaw(left_cmd, right_cmd);
-
-  for (uint32_t elapsed_ms = 0U;
-       elapsed_ms < WHEEL_SPEED_PI_RUN_MS;
-       elapsed_ms += WHEEL_SPEED_PI_SAMPLE_PERIOD_MS)
-  {
-    osDelay(WHEEL_SPEED_PI_SAMPLE_PERIOD_MS);
-
-    int32_t enc_a = MotorDriver_GetEncoderA();
-    int32_t enc_b = MotorDriver_GetEncoderB();
-    int32_t delta_a = enc_a - previous_enc_a;
-    int32_t delta_b = enc_b - previous_enc_b;
-    int32_t speed_left = (delta_a < 0) ? -delta_a : delta_a;
-    int32_t speed_right = (delta_b < 0) ? -delta_b : delta_b;
-
-    left_mag = WheelSpeedController_Update(&left_state, config, speed_left);
-    right_mag = WheelSpeedController_Update(&right_state, config, speed_right);
-    left_cmd = (direction > 0) ? left_mag : (int16_t)-left_mag;
-    right_cmd = (direction > 0) ? right_mag : (int16_t)-right_mag;
-
-    Chassis_SetRaw(left_cmd, right_cmd);
-    App_LogWheelSpeedPiStatus(direction_name,
-                              config->target_ticks_per_sample,
-                              left_cmd,
-                              right_cmd,
-                              enc_a,
-                              enc_b,
-                              delta_a,
-                              delta_b,
-                              &left_state,
-                              &right_state);
-
-    previous_enc_a = enc_a;
-    previous_enc_b = enc_b;
-  }
-}
-
-static void App_LogWheelSpeedPiStatus(const char *direction_name,
-                                      int32_t target_ticks_per_sample,
-                                      int16_t left_duty,
-                                      int16_t right_duty,
-                                      int32_t enc_a,
-                                      int32_t enc_b,
-                                      int32_t delta_a,
-                                      int32_t delta_b,
-                                      const WheelSpeedController_State_t *left_state,
-                                      const WheelSpeedController_State_t *right_state)
-{
-  char log_line[256];
-
-  (void)snprintf(log_line,
-                 sizeof(log_line),
-                 "[PI] dir=%s target=%ld left_duty=%d right_duty=%d encA=%ld encB=%ld dA=%ld dB=%ld errL=%ld errR=%ld intL=%ld intR=%ld\r\n",
-                 direction_name,
-                 (long)target_ticks_per_sample,
-                 (int)left_duty,
-                 (int)right_duty,
-                 (long)enc_a,
-                 (long)enc_b,
-                 (long)delta_a,
-                 (long)delta_b,
-                 (long)left_state->error,
-                 (long)right_state->error,
-                 (long)left_state->integral,
-                 (long)right_state->integral);
-  APP_LOG_RAW(log_line);
+  APP_LOG("[APP] WheelSpeedPiTest: lifted-wheel speed PI logging enabled");
+  App_WheelSpeedPiTest_Init();
+  App_WheelSpeedPiTest_Task(NULL);
 }
 #endif
 
