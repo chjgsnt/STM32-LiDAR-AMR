@@ -17,6 +17,10 @@
  * MotorForcedSpinCheck is retained as an available mode, but it is not the
  * active mode for this demo.
  *
+ * EncoderBringup is retained as an available mode for encoder count/delta
+ * verification. It is not the active mode unless APP_ACTIVE_MODE is changed
+ * explicitly for that test.
+ *
  * Use APP_MODE_LIDAR_OBSTACLE_GROUND_TEST only for a supervised short ground
  * test after the lifted-wheel test has passed. Keep the 3 second start delay,
  * 10 second timeout, and emergency power access in place. Do not commit or
@@ -33,6 +37,7 @@
 #define APP_MODE_SERVO_SCAN_OBSTACLE        8
 #define APP_MODE_NO_SERVO_OBSTACLE          9
 #define APP_MODE_LIDAR_OBSTACLE_AVOIDANCE   10
+#define APP_MODE_ENCODER_BRINGUP            11
 
 #ifdef APP_ACTIVE_MODE
 #warning "APP_ACTIVE_MODE is fixed to APP_MODE_LIDAR_OBSTACLE_AVOIDANCE for this demo; direct override ignored"
@@ -40,7 +45,7 @@
 #endif
 #define APP_ACTIVE_MODE APP_MODE_LIDAR_OBSTACLE_AVOIDANCE
 
-#if (APP_ACTIVE_MODE < APP_MODE_LIDAR_OBSTACLE_DRY_RUN) || (APP_ACTIVE_MODE > APP_MODE_LIDAR_OBSTACLE_AVOIDANCE)
+#if (APP_ACTIVE_MODE < APP_MODE_LIDAR_OBSTACLE_DRY_RUN) || (APP_ACTIVE_MODE > APP_MODE_ENCODER_BRINGUP)
 #error "APP_ACTIVE_MODE has an invalid value"
 #endif
 
@@ -56,6 +61,7 @@
 #define APP_MODE_IS_SERVO_SCAN_OBSTACLE        (APP_ACTIVE_MODE == APP_MODE_SERVO_SCAN_OBSTACLE)
 #define APP_MODE_IS_NO_SERVO_OBSTACLE          (APP_ACTIVE_MODE == APP_MODE_NO_SERVO_OBSTACLE)
 #define APP_MODE_IS_LIDAR_OBSTACLE_AVOIDANCE   (APP_ACTIVE_MODE == APP_MODE_LIDAR_OBSTACLE_AVOIDANCE)
+#define APP_MODE_IS_ENCODER_BRINGUP            (APP_ACTIVE_MODE == APP_MODE_ENCODER_BRINGUP)
 #define APP_MODE_USES_LIDAR_BRINGUP            (APP_MODE_IS_LIDAR_OBSTACLE || APP_MODE_IS_IMU_HEADING_ASSIST_DRY_RUN || APP_MODE_IS_LIDAR_OBSTACLE_AVOIDANCE)
 
 /*
@@ -72,6 +78,7 @@
 #define APP_SERVO_SCAN_OBSTACLE_ENABLE        APP_MODE_IS_SERVO_SCAN_OBSTACLE
 #define APP_NO_SERVO_OBSTACLE_ENABLE          APP_MODE_IS_NO_SERVO_OBSTACLE
 #define APP_LIDAR_OBSTACLE_AVOIDANCE_ENABLE   APP_MODE_IS_LIDAR_OBSTACLE_AVOIDANCE
+#define APP_ENCODER_BRINGUP_ENABLE            APP_MODE_IS_ENCODER_BRINGUP
 
 /*
  * LiDAR stop-check motor output arm.
@@ -356,6 +363,10 @@
 
 #if APP_MODE_IS_NO_SERVO_OBSTACLE
 #warning "APP_ACTIVE_MODE is NO SERVO OBSTACLE: ultrasonic-only backup/turn demo, lift wheels first"
+#endif
+
+#if APP_MODE_IS_ENCODER_BRINGUP
+#warning "APP_ACTIVE_MODE is ENCODER BRINGUP: spin wheels by hand or run a supervised motor test"
 #endif
 
 #if APP_IMU_HEADING_ASSIST_LIFTED_WHEEL_TEST_ENABLE

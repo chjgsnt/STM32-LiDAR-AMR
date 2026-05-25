@@ -25,6 +25,9 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#if APP_ENABLE_ENCODER_BRINGUP_TEST
+#include "app_encoder_bringup.h"
+#endif
 #include "app_lidar.h"
 #if APP_ENABLE_LIDAR_OBSTACLE_AVOIDANCE_TEST
 #include "app_lidar_obstacle_avoidance.h"
@@ -542,6 +545,10 @@ void StartTask05(void *argument)
   App_RunWheelSpeedPiTest();
 #elif APP_ENABLE_HEADING_HOLD_TEST
   App_RunHeadingHoldTest();
+#elif APP_ENABLE_ENCODER_BRINGUP_TEST
+  APP_LOG("[APP] EncoderBringup: encoder count/delta logging enabled");
+  App_EncoderBringup_Init();
+  App_EncoderBringup_Task(argument);
 #elif APP_ENABLE_LIDAR_OBSTACLE_AVOIDANCE_TEST
   APP_LOG("[APP] lidar obstacle avoidance enabled");
   App_LidarObstacleAvoidance_Init();
@@ -689,6 +696,8 @@ static const char *App_GetActiveModeName(void)
   return "NoServoObstacleAvoidance";
 #elif APP_ACTIVE_MODE == APP_MODE_LIDAR_OBSTACLE_AVOIDANCE
   return "LiDARObstacleAvoidance";
+#elif APP_ACTIVE_MODE == APP_MODE_ENCODER_BRINGUP
+  return "EncoderBringup";
 #elif APP_ACTIVE_MODE == APP_MODE_MOTOR_TEST
   return "motor test";
 #elif APP_ACTIVE_MODE == APP_MODE_IMU_TEST
@@ -726,6 +735,8 @@ static const char *App_GetActiveTestName(void)
   return "NoServoObstacleAvoidance";
 #elif APP_ACTIVE_TEST == APP_TEST_LIDAR_OBSTACLE_AVOIDANCE
   return "LiDARObstacleAvoidance";
+#elif APP_ACTIVE_TEST == APP_TEST_ENCODER_BRINGUP
+  return "EncoderBringup";
 #else
   return "unknown";
 #endif

@@ -48,6 +48,7 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 # Add sources to executable
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user sources here
+    Core/Src/app_encoder_bringup.c
     Core/Src/app_lidar.c
     Core/Src/app_lidar_obstacle_avoidance.c
     Core/Src/app_lidar_stop_check.c
