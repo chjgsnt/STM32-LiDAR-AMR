@@ -4,9 +4,15 @@
 /*
  * CENTRAL TEST/RUN MODE SELECTOR.
  *
- * This demo build fixes APP_ACTIVE_MODE to LidarObstacleStopCheck. The
+ * This demo build fixes APP_ACTIVE_MODE to LiDARObstacleAvoidance. The
  * lower-level enable flags are derived from this selector so test builds do
  * not require editing several independent macros.
+ *
+ * ServoScanObstacle is retained as an available mode, but it is not the active
+ * mode because the current hardware has no SG90/MG90S servo installed.
+ *
+ * NoServoObstacleAvoidance is retained as an available mode, but it is not the
+ * active mode because the current hardware has no ultrasonic module installed.
  *
  * MotorForcedSpinCheck is retained as an available mode, but it is not the
  * active mode for this demo.
@@ -24,14 +30,17 @@
 #define APP_MODE_IMU_HEADING_ASSIST_DRY_RUN 5
 #define APP_MODE_LIDAR_OBSTACLE_STOP_CHECK  6
 #define APP_MODE_MOTOR_FORCED_SPIN_CHECK    7
+#define APP_MODE_SERVO_SCAN_OBSTACLE        8
+#define APP_MODE_NO_SERVO_OBSTACLE          9
+#define APP_MODE_LIDAR_OBSTACLE_AVOIDANCE   10
 
 #ifdef APP_ACTIVE_MODE
-#warning "APP_ACTIVE_MODE is fixed to APP_MODE_LIDAR_OBSTACLE_STOP_CHECK for this demo; direct override ignored"
+#warning "APP_ACTIVE_MODE is fixed to APP_MODE_LIDAR_OBSTACLE_AVOIDANCE for this demo; direct override ignored"
 #undef APP_ACTIVE_MODE
 #endif
-#define APP_ACTIVE_MODE APP_MODE_LIDAR_OBSTACLE_STOP_CHECK
+#define APP_ACTIVE_MODE APP_MODE_LIDAR_OBSTACLE_AVOIDANCE
 
-#if (APP_ACTIVE_MODE < APP_MODE_LIDAR_OBSTACLE_DRY_RUN) || (APP_ACTIVE_MODE > APP_MODE_MOTOR_FORCED_SPIN_CHECK)
+#if (APP_ACTIVE_MODE < APP_MODE_LIDAR_OBSTACLE_DRY_RUN) || (APP_ACTIVE_MODE > APP_MODE_LIDAR_OBSTACLE_AVOIDANCE)
 #error "APP_ACTIVE_MODE has an invalid value"
 #endif
 
@@ -44,7 +53,10 @@
 #define APP_MODE_IS_SENSOR_BRINGUP             (APP_ACTIVE_MODE == APP_MODE_SENSOR_BRINGUP)
 #define APP_MODE_IS_IMU_HEADING_ASSIST_DRY_RUN (APP_ACTIVE_MODE == APP_MODE_IMU_HEADING_ASSIST_DRY_RUN)
 #define APP_MODE_IS_MOTOR_FORCED_SPIN_CHECK    (APP_ACTIVE_MODE == APP_MODE_MOTOR_FORCED_SPIN_CHECK)
-#define APP_MODE_USES_LIDAR_BRINGUP            (APP_MODE_IS_LIDAR_OBSTACLE || APP_MODE_IS_IMU_HEADING_ASSIST_DRY_RUN)
+#define APP_MODE_IS_SERVO_SCAN_OBSTACLE        (APP_ACTIVE_MODE == APP_MODE_SERVO_SCAN_OBSTACLE)
+#define APP_MODE_IS_NO_SERVO_OBSTACLE          (APP_ACTIVE_MODE == APP_MODE_NO_SERVO_OBSTACLE)
+#define APP_MODE_IS_LIDAR_OBSTACLE_AVOIDANCE   (APP_ACTIVE_MODE == APP_MODE_LIDAR_OBSTACLE_AVOIDANCE)
+#define APP_MODE_USES_LIDAR_BRINGUP            (APP_MODE_IS_LIDAR_OBSTACLE || APP_MODE_IS_IMU_HEADING_ASSIST_DRY_RUN || APP_MODE_IS_LIDAR_OBSTACLE_AVOIDANCE)
 
 /*
  * Derived mode flags. Do not edit these directly.
@@ -57,6 +69,9 @@
 #define APP_TEST_MODE_ENABLE_SENSOR_BRINGUP   APP_MODE_IS_SENSOR_BRINGUP
 #define APP_IMU_HEADING_ASSIST_DRY_RUN_ENABLE APP_MODE_IS_IMU_HEADING_ASSIST_DRY_RUN
 #define APP_MOTOR_FORCED_SPIN_CHECK_ENABLE    APP_MODE_IS_MOTOR_FORCED_SPIN_CHECK
+#define APP_SERVO_SCAN_OBSTACLE_ENABLE        APP_MODE_IS_SERVO_SCAN_OBSTACLE
+#define APP_NO_SERVO_OBSTACLE_ENABLE          APP_MODE_IS_NO_SERVO_OBSTACLE
+#define APP_LIDAR_OBSTACLE_AVOIDANCE_ENABLE   APP_MODE_IS_LIDAR_OBSTACLE_AVOIDANCE
 
 /*
  * LiDAR stop-check motor output arm.
@@ -325,6 +340,22 @@
 
 #if APP_MODE_IS_MOTOR_FORCED_SPIN_CHECK
 #warning "APP_ACTIVE_MODE is MOTOR FORCED SPIN CHECK: lift wheels first, direct motor driver output"
+#endif
+
+#if APP_MODE_IS_SENSOR_BRINGUP
+#warning "APP_ACTIVE_MODE is SENSOR BRINGUP: no motor, no servo, no ultrasonic obstacle output"
+#endif
+
+#if APP_MODE_IS_LIDAR_OBSTACLE_AVOIDANCE
+#warning "APP_ACTIVE_MODE is LIDAR OBSTACLE AVOIDANCE: verify LiDAR front sector and lift wheels first"
+#endif
+
+#if APP_MODE_IS_SERVO_SCAN_OBSTACLE
+#warning "APP_ACTIVE_MODE is SERVO SCAN OBSTACLE: verify servo/ultrasonic pins, lift wheels first"
+#endif
+
+#if APP_MODE_IS_NO_SERVO_OBSTACLE
+#warning "APP_ACTIVE_MODE is NO SERVO OBSTACLE: ultrasonic-only backup/turn demo, lift wheels first"
 #endif
 
 #if APP_IMU_HEADING_ASSIST_LIFTED_WHEEL_TEST_ENABLE

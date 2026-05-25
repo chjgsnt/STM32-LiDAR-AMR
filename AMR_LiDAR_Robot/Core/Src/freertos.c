@@ -26,9 +26,18 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "app_lidar.h"
+#if APP_ENABLE_LIDAR_OBSTACLE_AVOIDANCE_TEST
+#include "app_lidar_obstacle_avoidance.h"
+#endif
 #include "app_lidar_stop_check.h"
 #if APP_ENABLE_MOTOR_FORCED_SPIN_CHECK_TEST
 #include "app_motor_forced_spin_check.h"
+#endif
+#if APP_ENABLE_NO_SERVO_OBSTACLE_TEST
+#include "app_no_servo_obstacle.h"
+#endif
+#if APP_ENABLE_SERVO_SCAN_OBSTACLE_TEST
+#include "app_servo_scan_obstacle.h"
 #endif
 #if !APP_LIDAR_OBSTACLE_STOP_CHECK_ENABLE
 #include "app_obstacle.h"
@@ -435,6 +444,8 @@ void StartTask02(void *argument)
   App_Lidar_Init();
 #if APP_LIDAR_OBSTACLE_STOP_CHECK_ENABLE
   App_LidarStopCheck_Init();
+#elif APP_ENABLE_LIDAR_OBSTACLE_AVOIDANCE_TEST
+  APP_LOG("[APP] LiDARObstacleAvoidance: lidar parser task active");
 #else
   App_Obstacle_Init();
   App_ObstacleMotor_Init();
@@ -448,6 +459,8 @@ void StartTask02(void *argument)
     App_Lidar_Task();
 #if APP_LIDAR_OBSTACLE_STOP_CHECK_ENABLE
     App_LidarStopCheck_Task();
+#elif APP_ENABLE_LIDAR_OBSTACLE_AVOIDANCE_TEST
+    /* LiDARObstacleAvoidance consumes the published LiDAR status in controlTask. */
 #else
 #if !APP_IMU_HEADING_ASSIST_DRY_RUN_ENABLE
     App_Obstacle_Task();
@@ -529,6 +542,32 @@ void StartTask05(void *argument)
   App_RunWheelSpeedPiTest();
 #elif APP_ENABLE_HEADING_HOLD_TEST
   App_RunHeadingHoldTest();
+#elif APP_ENABLE_LIDAR_OBSTACLE_AVOIDANCE_TEST
+  APP_LOG("[APP] lidar obstacle avoidance enabled");
+  App_LidarObstacleAvoidance_Init();
+  for(;;)
+  {
+    App_LidarObstacleAvoidance_Task();
+    osDelay(50);
+  }
+#elif APP_ENABLE_NO_SERVO_OBSTACLE_TEST
+  APP_LOG("[APP] NoServoObstacleAvoidance: ultrasonic-only backup/turn obstacle avoidance enabled");
+  App_NoServoObstacle_Init();
+  for(;;)
+  {
+    App_NoServoObstacle_Task();
+    osDelay(50);
+  }
+#elif APP_ENABLE_SERVO_SCAN_OBSTACLE_TEST
+  APP_LOG("[APP] ServoScanObstacle: ultrasonic servo scan obstacle avoidance enabled");
+  App_ServoScanObstacle_Init();
+  for(;;)
+  {
+    App_ServoScanObstacle_Task();
+    osDelay(50);
+  }
+#elif APP_TEST_MODE_ENABLE_SENSOR_BRINGUP
+  APP_LOG("[APP] sensor bring-up safe default: no motor output, no servo PWM, no ultrasonic obstacle task");
 #elif APP_ENABLE_LIDAR_BRINGUP_TEST
 #if APP_LIDAR_OBSTACLE_STOP_CHECK_ENABLE
   APP_LOG("[APP] LiDAR obstacle stop check: front-only forward/stop, obstacle state machine disabled");
@@ -644,6 +683,12 @@ static const char *App_GetActiveModeName(void)
   return "LidarObstacleStopCheck";
 #elif APP_ACTIVE_MODE == APP_MODE_MOTOR_FORCED_SPIN_CHECK
   return "MotorForcedSpinCheck";
+#elif APP_ACTIVE_MODE == APP_MODE_SERVO_SCAN_OBSTACLE
+  return "ServoScanObstacle";
+#elif APP_ACTIVE_MODE == APP_MODE_NO_SERVO_OBSTACLE
+  return "NoServoObstacleAvoidance";
+#elif APP_ACTIVE_MODE == APP_MODE_LIDAR_OBSTACLE_AVOIDANCE
+  return "LiDARObstacleAvoidance";
 #elif APP_ACTIVE_MODE == APP_MODE_MOTOR_TEST
   return "motor test";
 #elif APP_ACTIVE_MODE == APP_MODE_IMU_TEST
@@ -675,6 +720,12 @@ static const char *App_GetActiveTestName(void)
   return "LidarObstacleStopCheck";
 #elif APP_ACTIVE_TEST == APP_TEST_MOTOR_FORCED_SPIN_CHECK
   return "MotorForcedSpinCheck";
+#elif APP_ACTIVE_TEST == APP_TEST_SERVO_SCAN_OBSTACLE
+  return "ServoScanObstacle";
+#elif APP_ACTIVE_TEST == APP_TEST_NO_SERVO_OBSTACLE
+  return "NoServoObstacleAvoidance";
+#elif APP_ACTIVE_TEST == APP_TEST_LIDAR_OBSTACLE_AVOIDANCE
+  return "LiDARObstacleAvoidance";
 #else
   return "unknown";
 #endif

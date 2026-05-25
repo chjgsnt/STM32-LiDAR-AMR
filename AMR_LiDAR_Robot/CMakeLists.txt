@@ -49,10 +49,15 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user sources here
     Core/Src/app_lidar.c
+    Core/Src/app_lidar_obstacle_avoidance.c
     Core/Src/app_lidar_stop_check.c
     Core/Src/app_motor_forced_spin_check.c
+    Core/Src/app_no_servo_obstacle.c
     Core/Src/app_obstacle.c
     Core/Src/app_obstacle_motor.c
+    Core/Src/app_servo.c
+    Core/Src/app_servo_scan_obstacle.c
+    Core/Src/app_ultrasonic.c
     Core/Src/bringup_log.c
     Core/Src/chassis.c
     Core/Src/i2c_scan.c
