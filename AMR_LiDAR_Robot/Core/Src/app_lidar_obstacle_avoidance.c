@@ -65,6 +65,7 @@ static uint32_t lidar_obs_last_no_front_log_ms = 0U;
 static uint32_t lidar_obs_last_lidar_data_ms = 0U;
 static uint32_t lidar_obs_last_valid_points = 0U;
 static uint8_t lidar_obs_front_invalid_count = 0U;
+static uint8_t lidar_obs_initialized = 0U;
 
 static void App_LidarObstacleAvoidance_EnterState(LidarObsState state,
                                                   LidarObsReason reason,
@@ -78,6 +79,7 @@ static void App_LidarObstacleAvoidance_ApplyBackup(void);
 static void App_LidarObstacleAvoidance_ApplyTurn(void);
 static const char *App_LidarObstacleAvoidance_StateName(LidarObsState state);
 static const char *App_LidarObstacleAvoidance_ReasonName(LidarObsReason reason);
+static uint32_t App_LidarObstacleAvoidance_ElapsedMs(uint32_t now_ms, uint32_t then_ms);
 
 void App_LidarObstacleAvoidance_Init(void)
 {
@@ -90,6 +92,7 @@ void App_LidarObstacleAvoidance_Init(void)
     lidar_obs_last_valid_points = 0U;
     lidar_obs_front_invalid_count = 0U;
     lidar_obs_state = LIDAR_OBS_STATE_START_DELAY;
+    lidar_obs_initialized = 1U;
 
     Chassis_Init();
     App_LidarObstacleAvoidance_ApplyStop();
@@ -118,6 +121,11 @@ void App_LidarObstacleAvoidance_Start(void)
     AMR_State_t amr_state = AMR_GetState();
     LidarObsFront front;
 
+    if (lidar_obs_initialized == 0U)
+    {
+        App_LidarObstacleAvoidance_Init();
+    }
+
     lidar_obs_start_ms = now_ms;
     lidar_obs_last_front_valid_ms = 0U;
     lidar_obs_last_log_ms = 0U;
@@ -125,6 +133,7 @@ void App_LidarObstacleAvoidance_Start(void)
     lidar_obs_last_lidar_data_ms = 0U;
     lidar_obs_last_valid_points = 0U;
     lidar_obs_front_invalid_count = 0U;
+    lidar_obs_state_enter_ms = now_ms;
 
     front = App_LidarObstacleAvoidance_ReadFront(now_ms);
 
@@ -177,10 +186,21 @@ void App_LidarObstacleAvoidance_Start(void)
     }
 }
 
+void App_LidarObstacleAvoidance_Update(void)
+{
+    App_LidarObstacleAvoidance_Task();
+}
+
 void App_LidarObstacleAvoidance_Task(void)
 {
     uint32_t now_ms = HAL_GetTick();
-    uint32_t state_elapsed_ms = now_ms - lidar_obs_state_enter_ms;
+    uint32_t state_elapsed_ms = App_LidarObstacleAvoidance_ElapsedMs(now_ms, lidar_obs_state_enter_ms);
+
+    if (lidar_obs_initialized == 0U)
+    {
+        return;
+    }
+
     LidarObsFront front = App_LidarObstacleAvoidance_ReadFront(now_ms);
 
     App_LidarObstacleAvoidance_LogFront(&front, now_ms);
@@ -189,7 +209,7 @@ void App_LidarObstacleAvoidance_Task(void)
     {
         case LIDAR_OBS_STATE_START_DELAY:
             App_LidarObstacleAvoidance_ApplyStop();
-            if ((now_ms - lidar_obs_start_ms) >= LIDAR_OBS_START_DELAY_MS)
+            if (App_LidarObstacleAvoidance_ElapsedMs(now_ms, lidar_obs_start_ms) >= LIDAR_OBS_START_DELAY_MS)
             {
                 App_LidarObstacleAvoidance_EnterState(LIDAR_OBS_STATE_WAIT_LIDAR,
                                                       LIDAR_OBS_REASON_START_DELAY_DONE,
@@ -205,7 +225,7 @@ void App_LidarObstacleAvoidance_Task(void)
                                                       LIDAR_OBS_REASON_LIDAR_READY,
                                                       now_ms);
             }
-            else if ((now_ms - lidar_obs_last_no_front_log_ms) >= LIDAR_OBS_NO_FRONT_LOG_MS)
+            else if (App_LidarObstacleAvoidance_ElapsedMs(now_ms, lidar_obs_last_no_front_log_ms) >= LIDAR_OBS_NO_FRONT_LOG_MS)
             {
                 lidar_obs_last_no_front_log_ms = now_ms;
                 APP_LOG("APP LIDAR_OBS: waiting_lidar ready=%u valid_points=%lu",
@@ -217,7 +237,7 @@ void App_LidarObstacleAvoidance_Task(void)
         case LIDAR_OBS_STATE_DRIVE_FORWARD:
             if (front.front_valid == 0U)
             {
-                uint32_t front_age_ms = now_ms - lidar_obs_last_front_valid_ms;
+                uint32_t front_age_ms = App_LidarObstacleAvoidance_ElapsedMs(now_ms, lidar_obs_last_front_valid_ms);
                 if (lidar_obs_front_invalid_count < LIDAR_OBS_FRONT_INVALID_LIMIT)
                 {
                     lidar_obs_front_invalid_count++;
@@ -275,23 +295,27 @@ void App_LidarObstacleAvoidance_Task(void)
             break;
 
         case LIDAR_OBS_STATE_BACKUP:
-            App_LidarObstacleAvoidance_ApplyBackup();
             if (state_elapsed_ms >= LIDAR_OBS_BACKUP_MS)
             {
                 App_LidarObstacleAvoidance_EnterState(LIDAR_OBS_STATE_TURN,
                                                       LIDAR_OBS_REASON_BACKUP_DONE,
                                                       now_ms);
+                break;
             }
+
+            App_LidarObstacleAvoidance_ApplyBackup();
             break;
 
         case LIDAR_OBS_STATE_TURN:
-            App_LidarObstacleAvoidance_ApplyTurn();
             if (state_elapsed_ms >= LIDAR_OBS_TURN_MS)
             {
                 App_LidarObstacleAvoidance_EnterState(LIDAR_OBS_STATE_RECOVER,
                                                       LIDAR_OBS_REASON_TURN_DONE,
                                                       now_ms);
+                break;
             }
+
+            App_LidarObstacleAvoidance_ApplyTurn();
             break;
 
         case LIDAR_OBS_STATE_RECOVER:
@@ -326,6 +350,8 @@ static void App_LidarObstacleAvoidance_EnterState(LidarObsState state,
                                                   LidarObsReason reason,
                                                   uint32_t now_ms)
 {
+    uint32_t elapsed_ms = App_LidarObstacleAvoidance_ElapsedMs(now_ms, lidar_obs_state_enter_ms);
+
     lidar_obs_state = state;
     lidar_obs_state_enter_ms = now_ms;
 
@@ -357,9 +383,10 @@ static void App_LidarObstacleAvoidance_EnterState(LidarObsState state,
             break;
     }
 
-    APP_LOG("APP LIDAR_OBS: state=%s reason=%s",
+    APP_LOG("APP LIDAR_OBS: state=%s reason=%s elapsed=%lu",
             App_LidarObstacleAvoidance_StateName(state),
-            App_LidarObstacleAvoidance_ReasonName(reason));
+            App_LidarObstacleAvoidance_ReasonName(reason),
+            (unsigned long)elapsed_ms);
 }
 
 static LidarObsFront App_LidarObstacleAvoidance_ReadFront(uint32_t now_ms)
@@ -383,7 +410,7 @@ static LidarObsFront App_LidarObstacleAvoidance_ReadFront(uint32_t now_ms)
 
     if ((lidar->ready != 0U) &&
         (lidar_obs_last_lidar_data_ms != 0U) &&
-        ((now_ms - lidar_obs_last_lidar_data_ms) < LIDAR_OBS_FRONT_TIMEOUT_MS) &&
+        (App_LidarObstacleAvoidance_ElapsedMs(now_ms, lidar_obs_last_lidar_data_ms) < LIDAR_OBS_FRONT_TIMEOUT_MS) &&
         (lidar->front_valid != 0U) &&
         (lidar->front_min_mm >= LIDAR_OBS_FRONT_MIN_MM) &&
         (lidar->front_min_mm != 0xFFFFU))
@@ -400,7 +427,7 @@ static void App_LidarObstacleAvoidance_LogFront(const LidarObsFront *front,
                                                 uint32_t now_ms)
 {
     if ((front == NULL) ||
-        ((now_ms - lidar_obs_last_log_ms) < LIDAR_OBS_LOG_INTERVAL_MS))
+        (App_LidarObstacleAvoidance_ElapsedMs(now_ms, lidar_obs_last_log_ms) < LIDAR_OBS_LOG_INTERVAL_MS))
     {
         return;
     }
@@ -501,4 +528,19 @@ static const char *App_LidarObstacleAvoidance_ReasonName(LidarObsReason reason)
         default:
             return "init";
     }
+}
+
+static uint32_t App_LidarObstacleAvoidance_ElapsedMs(uint32_t now_ms, uint32_t then_ms)
+{
+    if (then_ms == 0U)
+    {
+        return UINT32_MAX;
+    }
+
+    if (now_ms >= then_ms)
+    {
+        return now_ms - then_ms;
+    }
+
+    return 0U;
 }

@@ -2,24 +2,43 @@
 
 #include "amr_system.h"
 #include "app_lidar.h"
-#include "app_odometry.h"
 #include "bringup_log.h"
 #include "chassis.h"
 #include "motor_driver.h"
 #include "stm32f4xx_hal.h"
 
-#define APP_SAFETY_LIDAR_TIMEOUT_MS 500U
-#define APP_SAFETY_LIDAR_START_GRACE_MS 1000U
+#define APP_SAFETY_LIDAR_RX_TIMEOUT_MS 1500U
+#define APP_SAFETY_LIDAR_VALID_WARN_MS 2000U
+#define APP_SAFETY_LIDAR_WARN_INTERVAL_MS 1000U
+#define APP_SAFETY_HEARTBEAT_MS 1000U
 #define APP_SAFETY_STALL_PWM_THRESHOLD 250
 #define APP_SAFETY_STALL_DELTA_THRESHOLD 2
 #define APP_SAFETY_STALL_TIME_MS 1000U
-#define APP_SAFETY_ODOM_SAMPLE_MAX_AGE_MS 250U
 
 static AppSafetyStatus_t app_safety_status = {APP_FAULT_NONE, 0U, 0U, 0, 0, 0, 0};
 static uint32_t app_safety_stall_start_ms = 0U;
+static uint32_t app_safety_lidar_valid_warn_last_ms = 0U;
+static uint32_t app_safety_last_heartbeat_ms = 0U;
+static int32_t app_safety_prev_encoder_left = 0;
+static int32_t app_safety_prev_encoder_right = 0;
+static uint8_t app_safety_encoder_sample_valid = 0U;
+static uint8_t app_safety_time_skew_warned = 0U;
 
+static void App_Safety_SampleMotion(ChassisCommandStatus_t *command,
+                                    int32_t *raw_left_delta,
+                                    int32_t *raw_right_delta);
+static void App_Safety_LogHeartbeat(uint32_t now_ms,
+                                    AMR_State_t state,
+                                    const ChassisCommandStatus_t *command,
+                                    int32_t raw_left_delta,
+                                    int32_t raw_right_delta);
 static void App_Safety_CheckLidarTimeout(uint32_t now_ms, AMR_State_t state);
-static void App_Safety_CheckEncoderStall(uint32_t now_ms, AMR_State_t state);
+static void App_Safety_CheckEncoderStall(uint32_t now_ms,
+                                         AMR_State_t state,
+                                         const ChassisCommandStatus_t *command,
+                                         int32_t raw_left_delta,
+                                         int32_t raw_right_delta);
+static uint32_t App_Safety_ElapsedMs(uint32_t now_ms, uint32_t then_ms);
 static uint8_t App_Safety_StateNeedsMotionSafety(AMR_State_t state);
 static int32_t App_Safety_AbsI32(int32_t value);
 static int16_t App_Safety_AbsI16(int16_t value);
@@ -36,9 +55,16 @@ void App_Safety_Init(void)
     app_safety_status.raw_left_delta = 0;
     app_safety_status.raw_right_delta = 0;
     app_safety_stall_start_ms = 0U;
+    app_safety_lidar_valid_warn_last_ms = 0U;
+    app_safety_last_heartbeat_ms = 0U;
+    app_safety_prev_encoder_left = MotorDriver_GetEncoderA();
+    app_safety_prev_encoder_right = MotorDriver_GetEncoderB();
+    app_safety_encoder_sample_valid = 1U;
+    app_safety_time_skew_warned = 0U;
 
-    APP_LOG("[SAFETY] init lidar_timeout_ms=%u stall_pwm=%d stall_delta=%d stall_ms=%u",
-            (unsigned int)APP_SAFETY_LIDAR_TIMEOUT_MS,
+    APP_LOG("[SAFETY] init lidar_rx_timeout_ms=%u lidar_valid_warn_ms=%u stall_pwm=%d stall_delta=%d stall_ms=%u",
+            (unsigned int)APP_SAFETY_LIDAR_RX_TIMEOUT_MS,
+            (unsigned int)APP_SAFETY_LIDAR_VALID_WARN_MS,
             APP_SAFETY_STALL_PWM_THRESHOLD,
             APP_SAFETY_STALL_DELTA_THRESHOLD,
             (unsigned int)APP_SAFETY_STALL_TIME_MS);
@@ -48,6 +74,12 @@ void App_Safety_Update(void)
 {
     uint32_t now_ms = HAL_GetTick();
     AMR_State_t state = AMR_GetState();
+    ChassisCommandStatus_t command = {0, 0, 0U};
+    int32_t raw_left_delta = 0;
+    int32_t raw_right_delta = 0;
+
+    App_Safety_SampleMotion(&command, &raw_left_delta, &raw_right_delta);
+    App_Safety_LogHeartbeat(now_ms, state, &command, raw_left_delta, raw_right_delta);
 
     if ((state == AMR_STATE_FAULT) || (state == AMR_STATE_ESTOP))
     {
@@ -61,7 +93,7 @@ void App_Safety_Update(void)
         return;
     }
 
-    App_Safety_CheckEncoderStall(now_ms, state);
+    App_Safety_CheckEncoderStall(now_ms, state, &command, raw_left_delta, raw_right_delta);
 }
 
 void App_Safety_ClearFault(void)
@@ -69,6 +101,12 @@ void App_Safety_ClearFault(void)
     app_safety_status.fault_code = APP_FAULT_NONE;
     app_safety_status.fault_time_ms = 0U;
     app_safety_stall_start_ms = 0U;
+    app_safety_lidar_valid_warn_last_ms = 0U;
+    app_safety_last_heartbeat_ms = 0U;
+    app_safety_prev_encoder_left = MotorDriver_GetEncoderA();
+    app_safety_prev_encoder_right = MotorDriver_GetEncoderB();
+    app_safety_encoder_sample_valid = 1U;
+    app_safety_time_skew_warned = 0U;
 
     APP_LOG("[SAFETY] fault cleared");
 }
@@ -103,12 +141,91 @@ const char *App_Safety_FaultName(AppFaultCode_t code)
     }
 }
 
+static void App_Safety_SampleMotion(ChassisCommandStatus_t *command,
+                                    int32_t *raw_left_delta,
+                                    int32_t *raw_right_delta)
+{
+    int32_t current_left = MotorDriver_GetEncoderA();
+    int32_t current_right = MotorDriver_GetEncoderB();
+
+    if (command != NULL)
+    {
+        Chassis_GetLastCommand(command);
+        app_safety_status.pwm_left = command->left_duty;
+        app_safety_status.pwm_right = command->right_duty;
+    }
+
+    if (app_safety_encoder_sample_valid == 0U)
+    {
+        app_safety_prev_encoder_left = current_left;
+        app_safety_prev_encoder_right = current_right;
+        app_safety_encoder_sample_valid = 1U;
+    }
+
+    if (raw_left_delta != NULL)
+    {
+        *raw_left_delta = current_left - app_safety_prev_encoder_left;
+        app_safety_status.raw_left_delta = *raw_left_delta;
+    }
+
+    if (raw_right_delta != NULL)
+    {
+        *raw_right_delta = current_right - app_safety_prev_encoder_right;
+        app_safety_status.raw_right_delta = *raw_right_delta;
+    }
+
+    app_safety_prev_encoder_left = current_left;
+    app_safety_prev_encoder_right = current_right;
+}
+
+static void App_Safety_LogHeartbeat(uint32_t now_ms,
+                                    AMR_State_t state,
+                                    const ChassisCommandStatus_t *command,
+                                    int32_t raw_left_delta,
+                                    int32_t raw_right_delta)
+{
+    const AppLidarStatus *lidar;
+    uint32_t last_rx_tick_ms;
+    uint32_t last_valid_update_ms;
+    uint32_t rx_age_ms;
+    uint32_t valid_age_ms;
+
+    if (App_Safety_StateNeedsMotionSafety(state) == 0U)
+    {
+        app_safety_last_heartbeat_ms = 0U;
+        return;
+    }
+
+    if ((app_safety_last_heartbeat_ms != 0U) &&
+        (App_Safety_ElapsedMs(now_ms, app_safety_last_heartbeat_ms) < APP_SAFETY_HEARTBEAT_MS))
+    {
+        return;
+    }
+
+    lidar = App_Lidar_GetStatus();
+    last_rx_tick_ms = (lidar != NULL) ? lidar->last_rx_tick_ms : 0U;
+    last_valid_update_ms = (lidar != NULL) ? lidar->last_valid_update_ms : 0U;
+    rx_age_ms = App_Safety_ElapsedMs(now_ms, last_rx_tick_ms);
+    valid_age_ms = App_Safety_ElapsedMs(now_ms, last_valid_update_ms);
+    app_safety_last_heartbeat_ms = now_ms;
+
+    APP_LOG("[SAFETY] state=%s rx_age=%lu valid_age=%lu pwmL=%d pwmR=%d rawL=%ld rawR=%ld",
+            AMR_StateName(state),
+            (unsigned long)rx_age_ms,
+            (unsigned long)valid_age_ms,
+            (int)((command != NULL) ? command->left_duty : 0),
+            (int)((command != NULL) ? command->right_duty : 0),
+            (long)raw_left_delta,
+            (long)raw_right_delta);
+}
+
 static void App_Safety_CheckLidarTimeout(uint32_t now_ms, AMR_State_t state)
 {
     const AppLidarStatus *lidar;
-    uint32_t last_update_ms;
-    uint32_t lidar_age_ms;
-    uint32_t state_age_ms;
+    uint32_t last_rx_tick_ms;
+    uint32_t last_valid_update_ms;
+    uint32_t rx_age_ms;
+    uint32_t valid_age_ms;
 
     if (App_Safety_StateNeedsMotionSafety(state) == 0U)
     {
@@ -121,40 +238,64 @@ static void App_Safety_CheckLidarTimeout(uint32_t now_ms, AMR_State_t state)
         return;
     }
 
-    last_update_ms = lidar->last_update_ms;
-    lidar_age_ms = now_ms - last_update_ms;
-    app_safety_status.last_lidar_update_ms = last_update_ms;
-    state_age_ms = now_ms - AMR_GetStateEnterMs();
+    last_rx_tick_ms = lidar->last_rx_tick_ms;
+    last_valid_update_ms = lidar->last_valid_update_ms;
+    rx_age_ms = App_Safety_ElapsedMs(now_ms, last_rx_tick_ms);
+    valid_age_ms = App_Safety_ElapsedMs(now_ms, last_valid_update_ms);
+    app_safety_status.last_lidar_update_ms = last_valid_update_ms;
 
-    if (state_age_ms < APP_SAFETY_LIDAR_START_GRACE_MS)
+    if ((last_rx_tick_ms != 0U) && (now_ms < last_rx_tick_ms))
     {
+        if (app_safety_time_skew_warned == 0U)
+        {
+            app_safety_time_skew_warned = 1U;
+            APP_LOG("[WARN] time_skew now=%lu last_rx=%lu",
+                    (unsigned long)now_ms,
+                    (unsigned long)last_rx_tick_ms);
+        }
+
         return;
     }
 
-    if ((lidar->ready != 0U) &&
-        (last_update_ms != 0U) &&
-        (lidar_age_ms > APP_SAFETY_LIDAR_TIMEOUT_MS))
+    if (rx_age_ms > APP_SAFETY_LIDAR_RX_TIMEOUT_MS)
     {
-        APP_LOG("[FAULT] LIDAR_TIMEOUT age=%lu ms last_update=%lu now=%lu",
-                (unsigned long)lidar_age_ms,
-                (unsigned long)last_update_ms,
+        APP_LOG("[FAULT] LIDAR_TIMEOUT_RX rx_age=%lu ms valid_age=%lu ms last_rx=%lu last_valid=%lu now=%lu",
+                (unsigned long)rx_age_ms,
+                (unsigned long)valid_age_ms,
+                (unsigned long)last_rx_tick_ms,
+                (unsigned long)last_valid_update_ms,
                 (unsigned long)now_ms);
-        App_Safety_EnterFault(APP_FAULT_LIDAR_TIMEOUT, "lidar_timeout");
+        App_Safety_EnterFault(APP_FAULT_LIDAR_TIMEOUT, "lidar_timeout_rx");
+        return;
     }
-    else if ((lidar->ready == 0U) || (last_update_ms == 0U))
+
+    if (valid_age_ms > APP_SAFETY_LIDAR_VALID_WARN_MS)
     {
-        APP_LOG("[FAULT] LIDAR_TIMEOUT age=%lu ms last_update=%lu now=%lu",
-                (unsigned long)lidar_age_ms,
-                (unsigned long)last_update_ms,
-                (unsigned long)now_ms);
-        App_Safety_EnterFault(APP_FAULT_LIDAR_TIMEOUT, "lidar_timeout");
+        if ((app_safety_lidar_valid_warn_last_ms == 0U) ||
+            (App_Safety_ElapsedMs(now_ms, app_safety_lidar_valid_warn_last_ms) >= APP_SAFETY_LIDAR_WARN_INTERVAL_MS))
+        {
+            app_safety_lidar_valid_warn_last_ms = now_ms;
+            APP_LOG("[WARN] LIDAR_VALID_STALE rx_age=%lu ms valid_age=%lu ms last_rx=%lu last_valid=%lu now=%lu ready=%u",
+                    (unsigned long)rx_age_ms,
+                    (unsigned long)valid_age_ms,
+                    (unsigned long)last_rx_tick_ms,
+                    (unsigned long)last_valid_update_ms,
+                    (unsigned long)now_ms,
+                    (unsigned int)lidar->ready);
+        }
+    }
+    else
+    {
+        app_safety_lidar_valid_warn_last_ms = 0U;
     }
 }
 
-static void App_Safety_CheckEncoderStall(uint32_t now_ms, AMR_State_t state)
+static void App_Safety_CheckEncoderStall(uint32_t now_ms,
+                                         AMR_State_t state,
+                                         const ChassisCommandStatus_t *command,
+                                         int32_t raw_left_delta,
+                                         int32_t raw_right_delta)
 {
-    ChassisCommandStatus_t command;
-    OdomSample_t sample;
     uint8_t command_active;
     uint8_t encoder_still;
 
@@ -164,30 +305,18 @@ static void App_Safety_CheckEncoderStall(uint32_t now_ms, AMR_State_t state)
         return;
     }
 
-    Chassis_GetLastCommand(&command);
-    if (Odom_GetLastSample(&sample) == false)
-    {
-        app_safety_stall_start_ms = 0U;
-        return;
-    }
-
-    app_safety_status.pwm_left = command.left_duty;
-    app_safety_status.pwm_right = command.right_duty;
-    app_safety_status.raw_left_delta = sample.raw_left_delta;
-    app_safety_status.raw_right_delta = sample.raw_right_delta;
-
-    if ((now_ms - sample.last_update_ms) > APP_SAFETY_ODOM_SAMPLE_MAX_AGE_MS)
+    if (command == NULL)
     {
         app_safety_stall_start_ms = 0U;
         return;
     }
 
     command_active =
-        ((App_Safety_AbsI16(command.left_duty) >= APP_SAFETY_STALL_PWM_THRESHOLD) ||
-         (App_Safety_AbsI16(command.right_duty) >= APP_SAFETY_STALL_PWM_THRESHOLD)) ? 1U : 0U;
+        ((App_Safety_AbsI16(command->left_duty) >= APP_SAFETY_STALL_PWM_THRESHOLD) ||
+         (App_Safety_AbsI16(command->right_duty) >= APP_SAFETY_STALL_PWM_THRESHOLD)) ? 1U : 0U;
     encoder_still =
-        ((App_Safety_AbsI32(sample.raw_left_delta) <= APP_SAFETY_STALL_DELTA_THRESHOLD) &&
-         (App_Safety_AbsI32(sample.raw_right_delta) <= APP_SAFETY_STALL_DELTA_THRESHOLD)) ? 1U : 0U;
+        ((App_Safety_AbsI32(raw_left_delta) <= APP_SAFETY_STALL_DELTA_THRESHOLD) &&
+         (App_Safety_AbsI32(raw_right_delta) <= APP_SAFETY_STALL_DELTA_THRESHOLD)) ? 1U : 0U;
 
     if ((command_active == 0U) || (encoder_still == 0U))
     {
@@ -201,13 +330,13 @@ static void App_Safety_CheckEncoderStall(uint32_t now_ms, AMR_State_t state)
         return;
     }
 
-    if ((now_ms - app_safety_stall_start_ms) >= APP_SAFETY_STALL_TIME_MS)
+    if (App_Safety_ElapsedMs(now_ms, app_safety_stall_start_ms) >= APP_SAFETY_STALL_TIME_MS)
     {
         APP_LOG("[FAULT] ENCODER_STALL pwmL=%d pwmR=%d rawL=%ld rawR=%ld",
-                (int)command.left_duty,
-                (int)command.right_duty,
-                (long)sample.raw_left_delta,
-                (long)sample.raw_right_delta);
+                (int)command->left_duty,
+                (int)command->right_duty,
+                (long)raw_left_delta,
+                (long)raw_right_delta);
         App_Safety_EnterFault(APP_FAULT_ENCODER_STALL, "encoder_stall");
     }
 }
@@ -217,6 +346,21 @@ static uint8_t App_Safety_StateNeedsMotionSafety(AMR_State_t state)
     return ((state == AMR_STATE_EXPLORE) ||
             (state == AMR_STATE_AVOID) ||
             (state == AMR_STATE_RETURN)) ? 1U : 0U;
+}
+
+static uint32_t App_Safety_ElapsedMs(uint32_t now_ms, uint32_t then_ms)
+{
+    if (then_ms == 0U)
+    {
+        return UINT32_MAX;
+    }
+
+    if (now_ms >= then_ms)
+    {
+        return now_ms - then_ms;
+    }
+
+    return 0U;
 }
 
 static int32_t App_Safety_AbsI32(int32_t value)
