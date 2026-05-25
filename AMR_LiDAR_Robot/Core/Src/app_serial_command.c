@@ -263,8 +263,11 @@ static void App_SerialCommand_HandleLine(const char *line)
     }
     else if (strcmp(line, "stop") == 0)
     {
+        if (AMR_GetState() == AMR_STATE_RETURN)
+        {
+            ReturnExecutor_Stop("serial_stop");
+        }
         AMR_RequestStop("serial_stop");
-        ReturnExecutor_Stop();
     }
     else if (strcmp(line, "return") == 0)
     {
@@ -280,8 +283,8 @@ static void App_SerialCommand_HandleLine(const char *line)
     }
     else if (strcmp(line, "estop") == 0)
     {
+        ReturnExecutor_Stop("serial_estop");
         AMR_RequestEStop("serial_estop");
-        ReturnExecutor_Stop();
     }
     else if (strcmp(line, "reset_fault") == 0)
     {

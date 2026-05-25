@@ -219,12 +219,20 @@ void ReturnExecutor_Start(void)
     APP_LOG("[RETURN] start count=%u", (unsigned int)return_path_count);
 }
 
-void ReturnExecutor_Stop(void)
+void ReturnExecutor_Stop(const char *reason)
 {
-    if (return_exec_state == RETURN_EXEC_RUNNING)
+    uint8_t was_active;
+
+    ReturnPath_EnsureInitialized();
+
+    if (reason == NULL)
     {
-        Chassis_Stop();
+        reason = "unspecified";
     }
+
+    was_active = ((return_exec_state == RETURN_EXEC_RUNNING) ||
+                  (return_exec_phase != RETURN_PHASE_IDLE) ||
+                  (return_exec_action != PATH_ACT_NONE)) ? 1U : 0U;
 
     return_exec_state = RETURN_EXEC_IDLE;
     return_exec_phase = RETURN_PHASE_IDLE;
@@ -233,6 +241,13 @@ void ReturnExecutor_Stop(void)
     return_exec_left_pwm = 0;
     return_exec_right_pwm = 0;
     return_exec_phase_start_ms = 0U;
+
+    Chassis_Stop();
+
+    if (was_active != 0U)
+    {
+        APP_LOG("[RETURN] stopped reason=%s", reason);
+    }
 }
 
 void ReturnExecutor_Update(void)
@@ -242,14 +257,14 @@ void ReturnExecutor_Update(void)
 
     ReturnPath_EnsureInitialized();
 
-    if (return_exec_state != RETURN_EXEC_RUNNING)
+    if (AMR_GetState() != AMR_STATE_RETURN)
     {
+        ReturnExecutor_Stop("state_not_return");
         return;
     }
 
-    if (AMR_GetState() != AMR_STATE_RETURN)
+    if (return_exec_state != RETURN_EXEC_RUNNING)
     {
-        ReturnExecutor_Stop();
         return;
     }
 
@@ -405,6 +420,12 @@ static void ReturnPath_GetInversePwm(PathAction_t action, int16_t *left_pwm, int
 
 static void ReturnExecutor_StartNextAction(uint32_t now_ms)
 {
+    if (AMR_GetState() != AMR_STATE_RETURN)
+    {
+        ReturnExecutor_Stop("state_not_return");
+        return;
+    }
+
     if (ReturnPath_PopInverse(&return_exec_action,
                               &return_exec_duration_ms,
                               &return_exec_left_pwm,
@@ -426,6 +447,11 @@ static void ReturnExecutor_StartNextAction(uint32_t now_ms)
     return_exec_phase_start_ms = now_ms;
     ReturnExecutor_ApplyCurrentAction();
 
+    if ((return_exec_state != RETURN_EXEC_RUNNING) || (AMR_GetState() != AMR_STATE_RETURN))
+    {
+        return;
+    }
+
     APP_LOG("[RETURN] exec action=%s dur=%lu pwmL=%d pwmR=%d remaining=%u",
             ReturnPath_ActionName(return_exec_action),
             (unsigned long)return_exec_duration_ms,
@@ -436,6 +462,12 @@ static void ReturnExecutor_StartNextAction(uint32_t now_ms)
 
 static void ReturnExecutor_ApplyCurrentAction(void)
 {
+    if (AMR_GetState() != AMR_STATE_RETURN)
+    {
+        ReturnExecutor_Stop("state_not_return");
+        return;
+    }
+
     if (return_exec_action == PATH_ACT_STOP)
     {
         Chassis_Stop();

@@ -2,6 +2,7 @@
 
 #include "app_lidar.h"
 #include "app_lidar_obstacle_avoidance.h"
+#include "app_return_path.h"
 #include "bringup_log.h"
 #include "chassis.h"
 #include "main.h"
@@ -132,6 +133,7 @@ uint8_t AMR_SetState(AMR_State_t next_state, const char *reason)
     {
         if ((next_state == AMR_STATE_FAULT) || (next_state == AMR_STATE_ESTOP))
         {
+            ReturnExecutor_Stop(reason);
             AMR_ApplySafeStop();
         }
 
@@ -142,9 +144,13 @@ uint8_t AMR_SetState(AMR_State_t next_state, const char *reason)
     amr_state_enter_ms = HAL_GetTick();
 
     if ((next_state == AMR_STATE_IDLE) ||
-        (next_state == AMR_STATE_RETURN) ||
         (next_state == AMR_STATE_FAULT) ||
         (next_state == AMR_STATE_ESTOP))
+    {
+        ReturnExecutor_Stop(reason);
+        AMR_ApplySafeStop();
+    }
+    else if (next_state == AMR_STATE_RETURN)
     {
         AMR_ApplySafeStop();
     }

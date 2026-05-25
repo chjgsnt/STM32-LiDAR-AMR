@@ -585,12 +585,15 @@ void StartTask05(void *argument)
     {
       if (ReturnExecutor_GetState() == RETURN_EXEC_RUNNING)
       {
-        ReturnExecutor_Stop();
+        ReturnExecutor_Stop("amr_idle");
       }
     }
     else if ((amr_state == AMR_STATE_FAULT) || (amr_state == AMR_STATE_ESTOP))
     {
-      ReturnExecutor_Stop();
+      if (ReturnExecutor_GetState() == RETURN_EXEC_RUNNING)
+      {
+        ReturnExecutor_Stop("amr_fault_estop");
+      }
     }
 
     osDelay(AMR_RUNTIME_PERIOD_MS);

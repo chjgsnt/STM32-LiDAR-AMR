@@ -42,7 +42,7 @@ void ReturnPath_Dump(void);
 const char *ReturnPath_ActionName(PathAction_t action);
 
 void ReturnExecutor_Start(void);
-void ReturnExecutor_Stop(void);
+void ReturnExecutor_Stop(const char *reason);
 void ReturnExecutor_Update(void);
 ReturnExecState_t ReturnExecutor_GetState(void);
 const char *ReturnExecutor_StateName(ReturnExecState_t state);
