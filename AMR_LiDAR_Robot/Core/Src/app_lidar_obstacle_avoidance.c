@@ -1,5 +1,6 @@
 #include "app_lidar_obstacle_avoidance.h"
 
+#include "amr_system.h"
 #include "app_lidar.h"
 #include "bringup_log.h"
 #include "chassis.h"
@@ -111,6 +112,71 @@ void App_LidarObstacleAvoidance_Init(void)
             App_LidarObstacleAvoidance_ReasonName(LIDAR_OBS_REASON_INIT));
 }
 
+void App_LidarObstacleAvoidance_Start(void)
+{
+    uint32_t now_ms = HAL_GetTick();
+    AMR_State_t amr_state = AMR_GetState();
+    LidarObsFront front;
+
+    lidar_obs_start_ms = now_ms;
+    lidar_obs_last_front_valid_ms = 0U;
+    lidar_obs_last_log_ms = 0U;
+    lidar_obs_last_no_front_log_ms = 0U;
+    lidar_obs_last_lidar_data_ms = 0U;
+    lidar_obs_last_valid_points = 0U;
+    lidar_obs_front_invalid_count = 0U;
+
+    front = App_LidarObstacleAvoidance_ReadFront(now_ms);
+
+    APP_LOG("APP LIDAR_OBS: start called state=%s amr=%s ready=%u front_valid=%u front=%u valid_points=%lu",
+            App_LidarObstacleAvoidance_StateName(lidar_obs_state),
+            AMR_StateName(amr_state),
+            (unsigned int)front.lidar_ready,
+            (unsigned int)front.front_valid,
+            (unsigned int)front.front_min_mm,
+            (unsigned long)front.valid_points);
+
+    if ((amr_state != AMR_STATE_EXPLORE) && (amr_state != AMR_STATE_AVOID))
+    {
+        APP_LOG("APP LIDAR_OBS: hold reason=AMR state not EXPLORE/AVOID amr=%s",
+                AMR_StateName(amr_state));
+        App_LidarObstacleAvoidance_EnterState(LIDAR_OBS_STATE_WAIT_LIDAR,
+                                              LIDAR_OBS_REASON_LIDAR_NO_VALID_FRONT,
+                                              now_ms);
+    }
+    else if (front.lidar_ready == 0U)
+    {
+        APP_LOG("APP LIDAR_OBS: hold reason=lidar not ready");
+        App_LidarObstacleAvoidance_EnterState(LIDAR_OBS_STATE_WAIT_LIDAR,
+                                              LIDAR_OBS_REASON_LIDAR_NO_VALID_FRONT,
+                                              now_ms);
+    }
+    else if (front.front_valid == 0U)
+    {
+        APP_LOG("APP LIDAR_OBS: hold reason=front invalid ready=%u valid_points=%lu",
+                (unsigned int)front.lidar_ready,
+                (unsigned long)front.valid_points);
+        App_LidarObstacleAvoidance_EnterState(LIDAR_OBS_STATE_WAIT_LIDAR,
+                                              LIDAR_OBS_REASON_LIDAR_NO_VALID_FRONT,
+                                              now_ms);
+    }
+    else if (front.front_min_mm < LIDAR_OBS_STOP_MM)
+    {
+        APP_LOG("[OBS] hold reason=front_blocked front=%u stop=%u",
+                (unsigned int)front.front_min_mm,
+                (unsigned int)LIDAR_OBS_STOP_MM);
+        App_LidarObstacleAvoidance_EnterState(LIDAR_OBS_STATE_BACKUP,
+                                              LIDAR_OBS_REASON_OBSTACLE_DETECTED,
+                                              now_ms);
+    }
+    else
+    {
+        App_LidarObstacleAvoidance_EnterState(LIDAR_OBS_STATE_DRIVE_FORWARD,
+                                              LIDAR_OBS_REASON_LIDAR_READY,
+                                              now_ms);
+    }
+}
+
 void App_LidarObstacleAvoidance_Task(void)
 {
     uint32_t now_ms = HAL_GetTick();
@@ -183,6 +249,9 @@ void App_LidarObstacleAvoidance_Task(void)
 
             if (front.front_min_mm < LIDAR_OBS_STOP_MM)
             {
+                APP_LOG("[OBS] hold reason=front_blocked front=%u stop=%u",
+                        (unsigned int)front.front_min_mm,
+                        (unsigned int)LIDAR_OBS_STOP_MM);
                 APP_LOG("APP LIDAR_OBS: obstacle detected front_min_mm=%u valid_points=%lu",
                         (unsigned int)front.front_min_mm,
                         (unsigned long)front.valid_points);

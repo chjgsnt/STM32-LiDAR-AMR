@@ -1,6 +1,7 @@
 #include "amr_system.h"
 
 #include "app_lidar.h"
+#include "app_lidar_obstacle_avoidance.h"
 #include "bringup_log.h"
 #include "chassis.h"
 #include "main.h"
@@ -18,6 +19,7 @@ static uint32_t amr_last_start_button_ms = 0U;
 
 static void AMR_EnsureInitialized(void);
 static void AMR_ApplySafeStop(void);
+static uint8_t AMR_IsMotionState(AMR_State_t state);
 static void AMR_UpdateStartButton(uint32_t now_ms);
 static void AMR_UpdateObstacleState(void);
 
@@ -157,6 +159,14 @@ uint8_t AMR_SetState(AMR_State_t next_state, const char *reason)
         APP_LOG("[ESTOP] motor outputs disabled");
     }
 
+#if APP_ENABLE_LIDAR_OBSTACLE_AVOIDANCE_TEST
+    if ((AMR_IsMotionState(previous_state) == 0U) &&
+        (AMR_IsMotionState(next_state) != 0U))
+    {
+        App_LidarObstacleAvoidance_Start();
+    }
+#endif
+
     return 1U;
 }
 
@@ -219,6 +229,11 @@ static void AMR_ApplySafeStop(void)
 {
     Chassis_Stop();
     MotorDriver_StopAll();
+}
+
+static uint8_t AMR_IsMotionState(AMR_State_t state)
+{
+    return ((state == AMR_STATE_EXPLORE) || (state == AMR_STATE_AVOID)) ? 1U : 0U;
 }
 
 static void AMR_UpdateStartButton(uint32_t now_ms)
