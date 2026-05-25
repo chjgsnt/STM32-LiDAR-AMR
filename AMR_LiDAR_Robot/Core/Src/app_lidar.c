@@ -1,5 +1,6 @@
 #include "app_lidar.h"
 
+#include "app_serial_command.h"
 #include "bringup_log.h"
 #include "cmsis_os.h"
 #include "usart.h"
@@ -24,6 +25,7 @@
 #define APP_LIDAR_MIN_DISTANCE_NONE 0xFFFFFFFFUL
 #define APP_LIDAR_STATUS_DISTANCE_INVALID 0xFFFFU
 #define APP_LIDAR_ZONE_MIN_QUALITY 8U
+#define APP_LIDAR_RX_DEBUG_INTERVAL_BYTES 1000U
 #define APP_LIDAR_FRONT_WIDE_MIN_TENTH_DEG 100U
 #define APP_LIDAR_FRONT_WIDE_MAX_TENTH_DEG 800U
 #define APP_LIDAR_FRONT_MIN_TENTH_DEG 200U
@@ -53,6 +55,7 @@ typedef struct
     uint32_t nearest_distance_mm;
     uint32_t nearest_angle_tenth_deg;
     uint32_t last_angle_tenth_deg;
+    uint32_t last_update_ms;
     uint32_t scan_start_count;
     uint32_t descriptor_payload_len;
     uint8_t ready;
@@ -85,6 +88,7 @@ typedef struct
 } App_Lidar_ScanNode_t;
 
 static HAL_StatusTypeDef App_Lidar_StartRx(void);
+static void App_Lidar_LogRxDebug(void);
 static void App_Lidar_SendStartupCommands(void);
 static HAL_StatusTypeDef App_Lidar_SendCommand(const char *name, const uint8_t *command, uint16_t length);
 static void App_Lidar_DelayMs(uint32_t delay_ms);
@@ -133,6 +137,7 @@ static volatile uint32_t app_lidar_right_min_mm;
 static volatile uint32_t app_lidar_nearest_distance_mm;
 static volatile uint32_t app_lidar_nearest_angle_tenth_deg;
 static volatile uint32_t app_lidar_last_angle_tenth_deg;
+static volatile uint32_t app_lidar_last_update_ms;
 static volatile uint32_t app_lidar_scan_start_count;
 static volatile uint8_t app_lidar_has_valid_distance;
 static volatile uint8_t app_lidar_has_front_distance;
@@ -142,6 +147,9 @@ static volatile uint8_t app_lidar_has_right_distance;
 static volatile uint8_t app_lidar_has_nearest;
 static volatile uint8_t app_lidar_nearest_quality;
 static volatile uint8_t app_lidar_has_angle;
+static volatile uint8_t app_lidar_callback_entered_logged;
+static volatile uint8_t app_lidar_first_rx_log_pending;
+static volatile uint32_t app_lidar_rx_count_log_pending;
 
 static AppLidarStatus app_lidar_status;
 static bool app_lidar_initialized;
@@ -170,10 +178,18 @@ void App_Lidar_Init(void)
     app_lidar_status.nearest_angle_deg = 0.0f;
     app_lidar_status.nearest_distance_mm = APP_LIDAR_STATUS_DISTANCE_INVALID;
     app_lidar_status.last_update_ms = 0U;
+    app_lidar_last_update_ms = 0U;
+    app_lidar_callback_entered_logged = 0U;
+    app_lidar_first_rx_log_pending = 0U;
+    app_lidar_rx_count_log_pending = 0U;
     App_Lidar_ResetParser();
     app_lidar_initialized = true;
 
     HAL_StatusTypeDef status = App_Lidar_StartRx();
+    APP_LOG("[LIDAR_RX] arm ret=%u state=0x%02X error=0x%08lX",
+            (unsigned int)status,
+            (unsigned int)huart4.RxState,
+            (unsigned long)huart4.ErrorCode);
     if ((status == HAL_OK) || (status == HAL_BUSY))
     {
         APP_LOG("APP LiDAR: uart4 rx started, baud=%lu", (unsigned long)APP_LIDAR_BAUD_RATE);
@@ -196,6 +212,8 @@ void App_Lidar_Task(void)
     {
         (void)App_Lidar_StartRx();
     }
+
+    App_Lidar_LogRxDebug();
 
     if ((now_ms - last_log_ms) >= APP_LIDAR_LOG_INTERVAL_MS)
     {
@@ -370,9 +388,24 @@ void App_Lidar_RxCpltCallback(UART_HandleTypeDef *huart)
         return;
     }
 
+    if (app_lidar_callback_entered_logged == 0U)
+    {
+        app_lidar_callback_entered_logged = 1U;
+        APP_LOG("[LIDAR_RX] callback entered");
+    }
+
     uint8_t byte = app_lidar_rx_byte;
 
     app_lidar_rx_bytes++;
+    if (app_lidar_rx_bytes == 1U)
+    {
+        app_lidar_first_rx_log_pending = 1U;
+    }
+    else if ((app_lidar_rx_bytes % APP_LIDAR_RX_DEBUG_INTERVAL_BYTES) == 0U)
+    {
+        app_lidar_rx_count_log_pending = app_lidar_rx_bytes;
+    }
+
     app_lidar_sample[app_lidar_sample_write_index] = byte;
     app_lidar_sample_write_index = (uint8_t)((app_lidar_sample_write_index + 1U) % APP_LIDAR_SAMPLE_SIZE);
 
@@ -387,12 +420,52 @@ void App_Lidar_RxCpltCallback(UART_HandleTypeDef *huart)
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-    App_Lidar_RxCpltCallback(huart);
+    if (huart == NULL)
+    {
+        return;
+    }
+
+    if (huart->Instance == UART4)
+    {
+        App_Lidar_RxCpltCallback(huart);
+    }
+
+    if (huart->Instance == USART2)
+    {
+        App_SerialCommand_RxCpltCallback(huart);
+    }
 }
 
 static HAL_StatusTypeDef App_Lidar_StartRx(void)
 {
     return HAL_UART_Receive_IT(&huart4, &app_lidar_rx_byte, 1U);
+}
+
+static void App_Lidar_LogRxDebug(void)
+{
+    uint8_t first_log;
+    uint32_t count_log;
+    uint32_t primask = __get_PRIMASK();
+
+    __disable_irq();
+    first_log = app_lidar_first_rx_log_pending;
+    app_lidar_first_rx_log_pending = 0U;
+    count_log = app_lidar_rx_count_log_pending;
+    app_lidar_rx_count_log_pending = 0U;
+    if (primask == 0U)
+    {
+        __enable_irq();
+    }
+
+    if (first_log != 0U)
+    {
+        APP_LOG("[LIDAR_RX] first byte");
+    }
+
+    if (count_log != 0U)
+    {
+        APP_LOG("[LIDAR_RX] rx_count=%lu", (unsigned long)count_log);
+    }
 }
 
 static void App_Lidar_SendStartupCommands(void)
@@ -599,6 +672,7 @@ static void App_Lidar_ProcessScanNodeCandidate(void)
     app_lidar_has_angle = 1U;
     app_lidar_last_angle_tenth_deg = node.angle_tenth_deg;
     app_lidar_has_valid_distance = 1U;
+    app_lidar_last_update_ms = HAL_GetTick();
 
     if (node.distance_mm < app_lidar_min_distance_mm)
     {
@@ -726,6 +800,7 @@ static void App_Lidar_CopySnapshot(App_Lidar_Snapshot_t *snapshot)
     snapshot->nearest_distance_mm = app_lidar_nearest_distance_mm;
     snapshot->nearest_angle_tenth_deg = app_lidar_nearest_angle_tenth_deg;
     snapshot->last_angle_tenth_deg = app_lidar_last_angle_tenth_deg;
+    snapshot->last_update_ms = app_lidar_last_update_ms;
     snapshot->scan_start_count = app_lidar_scan_start_count;
     snapshot->descriptor_payload_len = app_lidar_descriptor_payload_len;
     snapshot->ready = app_lidar_descriptor_seen;
@@ -778,8 +853,6 @@ static void App_Lidar_CopySnapshot(App_Lidar_Snapshot_t *snapshot)
 
 static void App_Lidar_UpdatePublishedStatus(const App_Lidar_Snapshot_t *snapshot)
 {
-    uint32_t now_ms;
-
     if (snapshot == NULL)
     {
         return;
@@ -788,17 +861,10 @@ static void App_Lidar_UpdatePublishedStatus(const App_Lidar_Snapshot_t *snapshot
     uint32_t primask = __get_PRIMASK();
     __disable_irq();
 
-    now_ms = HAL_GetTick();
-
-    if ((snapshot->rx_bytes != app_lidar_status.rx_bytes) ||
-        (snapshot->valid_points != app_lidar_status.valid_points))
-    {
-        app_lidar_status.last_update_ms = now_ms;
-    }
-
     app_lidar_status.ready = snapshot->ready;
     app_lidar_status.rx_bytes = snapshot->rx_bytes;
     app_lidar_status.valid_points = snapshot->valid_points;
+    app_lidar_status.last_update_ms = snapshot->last_update_ms;
     app_lidar_status.front_valid = snapshot->has_front_distance;
     app_lidar_status.front_wide_valid = snapshot->has_front_wide_distance;
     app_lidar_status.left_valid = snapshot->has_left_distance;

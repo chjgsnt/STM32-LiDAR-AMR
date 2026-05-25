@@ -9,7 +9,7 @@
 #include "stm32f4xx_hal.h"
 
 #define APP_SAFETY_LIDAR_TIMEOUT_MS 500U
-#define APP_SAFETY_LIDAR_START_GRACE_MS 1500U
+#define APP_SAFETY_LIDAR_START_GRACE_MS 1000U
 #define APP_SAFETY_STALL_PWM_THRESHOLD 250
 #define APP_SAFETY_STALL_DELTA_THRESHOLD 2
 #define APP_SAFETY_STALL_TIME_MS 1000U
@@ -51,7 +51,6 @@ void App_Safety_Update(void)
 
     if ((state == AMR_STATE_FAULT) || (state == AMR_STATE_ESTOP))
     {
-        App_Safety_StopOutputs();
         return;
     }
 
@@ -108,6 +107,7 @@ static void App_Safety_CheckLidarTimeout(uint32_t now_ms, AMR_State_t state)
 {
     const AppLidarStatus *lidar;
     uint32_t last_update_ms;
+    uint32_t lidar_age_ms;
     uint32_t state_age_ms;
 
     if (App_Safety_StateNeedsMotionSafety(state) == 0U)
@@ -122,18 +122,31 @@ static void App_Safety_CheckLidarTimeout(uint32_t now_ms, AMR_State_t state)
     }
 
     last_update_ms = lidar->last_update_ms;
+    lidar_age_ms = now_ms - last_update_ms;
     app_safety_status.last_lidar_update_ms = last_update_ms;
     state_age_ms = now_ms - AMR_GetStateEnterMs();
 
-    if ((last_update_ms != 0U) && ((now_ms - last_update_ms) > APP_SAFETY_LIDAR_TIMEOUT_MS))
+    if (state_age_ms < APP_SAFETY_LIDAR_START_GRACE_MS)
     {
-        APP_LOG("[FAULT] LIDAR_TIMEOUT last_update=%lu ms",
-                (unsigned long)last_update_ms);
+        return;
+    }
+
+    if ((lidar->ready != 0U) &&
+        (last_update_ms != 0U) &&
+        (lidar_age_ms > APP_SAFETY_LIDAR_TIMEOUT_MS))
+    {
+        APP_LOG("[FAULT] LIDAR_TIMEOUT age=%lu ms last_update=%lu now=%lu",
+                (unsigned long)lidar_age_ms,
+                (unsigned long)last_update_ms,
+                (unsigned long)now_ms);
         App_Safety_EnterFault(APP_FAULT_LIDAR_TIMEOUT, "lidar_timeout");
     }
-    else if ((last_update_ms == 0U) && (state_age_ms > APP_SAFETY_LIDAR_START_GRACE_MS))
+    else if ((lidar->ready == 0U) || (last_update_ms == 0U))
     {
-        APP_LOG("[FAULT] LIDAR_TIMEOUT last_update=0 ms");
+        APP_LOG("[FAULT] LIDAR_TIMEOUT age=%lu ms last_update=%lu now=%lu",
+                (unsigned long)lidar_age_ms,
+                (unsigned long)last_update_ms,
+                (unsigned long)now_ms);
         App_Safety_EnterFault(APP_FAULT_LIDAR_TIMEOUT, "lidar_timeout");
     }
 }
@@ -201,7 +214,9 @@ static void App_Safety_CheckEncoderStall(uint32_t now_ms, AMR_State_t state)
 
 static uint8_t App_Safety_StateNeedsMotionSafety(AMR_State_t state)
 {
-    return ((state == AMR_STATE_EXPLORE) || (state == AMR_STATE_AVOID)) ? 1U : 0U;
+    return ((state == AMR_STATE_EXPLORE) ||
+            (state == AMR_STATE_AVOID) ||
+            (state == AMR_STATE_RETURN)) ? 1U : 0U;
 }
 
 static int32_t App_Safety_AbsI32(int32_t value)

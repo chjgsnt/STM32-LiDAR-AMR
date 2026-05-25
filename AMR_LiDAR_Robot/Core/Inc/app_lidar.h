@@ -30,7 +30,7 @@ typedef struct
 /*
  * front/front_wide/left/right distance fields use 0xFFFF when the corresponding valid flag is 0.
  * nearest_distance_mm also uses 0xFFFF when no nearest reliable point was observed.
- * last_update_ms is the HAL tick when rx/valid point counters last advanced.
+ * last_update_ms is the HAL tick when the parser last accepted a valid scan distance node.
  * The returned pointer is owned by app_lidar and is updated by App_Lidar_Task().
  */
 const AppLidarStatus *App_Lidar_GetStatus(void);

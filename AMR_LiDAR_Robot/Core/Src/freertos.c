@@ -578,16 +578,11 @@ void StartTask05(void *argument)
     }
     else if (amr_state == AMR_STATE_RETURN)
     {
-      Chassis_Stop();
       if ((last_return_log_ms == 0U) || ((now_ms - last_return_log_ms) >= 1000U))
       {
         last_return_log_ms = now_ms;
         APP_LOG("[AMR] RETURN mode placeholder");
       }
-    }
-    else
-    {
-      Chassis_Stop();
     }
 
     osDelay(50);
