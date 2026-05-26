@@ -142,6 +142,8 @@ LiDAR, encoder, motor control, fault handling, and benchmark stability.
 
 Serial commands `ui`, `page 0`, `page 1`, `page 2`, and `tel` support UI
 inspection, page switching, and compact telemetry for validation videos.
+Serial UI automatic page printing is disabled by default to avoid telemetry
+flooding during validation.
 
 ADC-based parameter telemetry is prepared in the UI layer with filtered
 speed-limit, obstacle-threshold, and wall-threshold values. It is displayed and

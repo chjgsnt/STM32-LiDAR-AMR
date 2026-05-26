@@ -19,6 +19,14 @@
 #define APP_UI_SERIAL_FALLBACK_ENABLE 1
 #endif
 
+#ifndef APP_UI_SERIAL_AUTO_PRINT_ENABLE
+#define APP_UI_SERIAL_AUTO_PRINT_ENABLE 0
+#endif
+
+#ifndef APP_UI_SERIAL_PRINT_PERIOD_MS
+#define APP_UI_SERIAL_PRINT_PERIOD_MS 2000U
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif

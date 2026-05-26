@@ -26,8 +26,15 @@
 #define APP_UI_SERIAL_FALLBACK_ENABLE 1
 #endif
 
+#ifndef APP_UI_SERIAL_AUTO_PRINT_ENABLE
+#define APP_UI_SERIAL_AUTO_PRINT_ENABLE 0
+#endif
+
+#ifndef APP_UI_SERIAL_PRINT_PERIOD_MS
+#define APP_UI_SERIAL_PRINT_PERIOD_MS 2000U
+#endif
+
 #define AMR_UI_UPDATE_MS 200U
-#define AMR_UI_SERIAL_LOG_MS 2000U
 #define AMR_UI_OLED_RETRY_MS 2000U
 #define AMR_UI_PAGE_COUNT 3U
 #define AMR_UI_ADC_SAMPLE_MS 200U
@@ -131,10 +138,12 @@ void App_UI_Init(void)
 void App_UI_Update(void)
 {
     uint32_t now_ms = HAL_GetTick();
+#if (APP_UI_OLED_ENABLE || (APP_UI_SERIAL_FALLBACK_ENABLE && APP_UI_SERIAL_AUTO_PRINT_ENABLE))
     char line1[22];
     char line2[22];
     char line3[22];
     char line4[22];
+#endif
 
     if ((app_ui_last_update_ms != 0U) &&
         ((now_ms - app_ui_last_update_ms) < AMR_UI_UPDATE_MS))
@@ -144,7 +153,9 @@ void App_UI_Update(void)
 
     app_ui_last_update_ms = now_ms;
     App_UI_UpdateParameters(now_ms);
+#if (APP_UI_OLED_ENABLE || (APP_UI_SERIAL_FALLBACK_ENABLE && APP_UI_SERIAL_AUTO_PRINT_ENABLE))
     App_UI_BuildLines(line1, line2, line3, line4);
+#endif
 
 #if APP_UI_OLED_ENABLE
     App_UI_TryOledInit(now_ms);
@@ -155,10 +166,10 @@ void App_UI_Update(void)
     }
 #endif
 
-#if APP_UI_SERIAL_FALLBACK_ENABLE
+#if (APP_UI_SERIAL_FALLBACK_ENABLE && APP_UI_SERIAL_AUTO_PRINT_ENABLE)
     if ((app_ui_oled_ready == 0U) &&
         ((app_ui_last_serial_log_ms == 0U) ||
-         ((now_ms - app_ui_last_serial_log_ms) >= AMR_UI_SERIAL_LOG_MS)))
+         (App_UI_ElapsedMs(now_ms, app_ui_last_serial_log_ms) >= APP_UI_SERIAL_PRINT_PERIOD_MS)))
     {
         app_ui_last_serial_log_ms = now_ms;
         APP_LOG("[UI] %s | %s | %s | %s", line1, line2, line3, line4);
@@ -207,6 +218,13 @@ void AppUI_NextPage(void)
 
 void AppUI_PrintStatus(void)
 {
+    char line1[22];
+    char line2[22];
+    char line3[22];
+    char line4[22];
+
+    App_UI_BuildLines(line1, line2, line3, line4);
+
     APP_LOG("[UI] page=%u oled=%s serial_ui=%s adc=%s raw=%u speed_lim=%u obs_th=%u wall_th=%u",
             (unsigned int)app_ui_page,
             (APP_UI_OLED_ENABLE != 0) ? ((app_ui_oled_ready != 0U) ? "ready" : "init") : "disabled",
@@ -216,6 +234,7 @@ void AppUI_PrintStatus(void)
             (unsigned int)app_ui_speed_limit,
             (unsigned int)app_ui_obstacle_threshold_mm,
             (unsigned int)app_ui_wall_threshold_mm);
+    APP_LOG("[UI_PAGE] %s | %s | %s | %s", line1, line2, line3, line4);
 }
 
 uint16_t AppUI_GetSpeedLimit(void)
