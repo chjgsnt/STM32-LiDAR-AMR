@@ -3,6 +3,7 @@
 #include "amr_system.h"
 #include "app_fault.h"
 #include "app_lidar.h"
+#include "app_map.h"
 #include "app_odometry.h"
 #include "app_button_control.h"
 #include "app_return_path.h"
@@ -74,7 +75,7 @@ void App_SerialCommand_Init(void)
     rx_status = App_SerialCommand_StartRx();
     if ((rx_status == HAL_OK) || (rx_status == HAL_BUSY))
     {
-        APP_LOG("[CMD] ready uart=huart2 commands=start stop return estop reset_fault odom_reset status");
+        APP_LOG("[CMD] ready uart=huart2 commands=start stop return estop reset_fault odom_reset status map grid");
         APP_LOG("[CMD] use newline: start<Enter> or no-newline command timeout=%u ms",
                 (unsigned int)APP_CMD_NO_NEWLINE_TIMEOUT_MS);
     }
@@ -310,6 +311,11 @@ static void App_SerialCommand_HandleLine(const char *line)
         app_cmd_last_status_ms = now_ms;
         App_SerialCommand_LogStatus();
     }
+    else if ((strcmp(line, "map") == 0) || (strcmp(line, "grid") == 0))
+    {
+        AppMap_PrintSummary();
+        AppMap_PrintGrid();
+    }
     else
     {
         APP_LOG("[CMD] unknown=%s", line);
@@ -329,7 +335,9 @@ static uint8_t App_SerialCommand_IsKnownCommand(const char *line)
             (strcmp(line, "estop") == 0) ||
             (strcmp(line, "reset_fault") == 0) ||
             (strcmp(line, "odom_reset") == 0) ||
-            (strcmp(line, "status") == 0)) ? 1U : 0U;
+            (strcmp(line, "status") == 0) ||
+            (strcmp(line, "map") == 0) ||
+            (strcmp(line, "grid") == 0)) ? 1U : 0U;
 }
 
 static char App_SerialCommand_ToLower(char ch)
@@ -386,6 +394,7 @@ static void App_SerialCommand_LogStatus(void)
     ReturnExecState_t return_state;
     AppFaultCode fault_code;
     const char *fault_name;
+    AppMapSummary_t map_summary = {0, 0, APP_MAP_DIR_EAST, 0U, 0U, 0U};
 
     (void)App_Safety_GetStatus(&safety);
     (void)Odom_GetPose(&pose);
@@ -401,6 +410,7 @@ static void App_SerialCommand_LogStatus(void)
     return_state = ReturnExecutor_GetState();
     fault_code = AppFault_Get();
     fault_name = AppFault_IsActive() ? AppFault_Name(fault_code) : App_Safety_FaultName(safety.fault_code);
+    (void)AppMap_GetSummary(&map_summary);
 
     x_mm = App_SerialCommand_ScaleFloatRounded(pose.x_m, 1000.0f);
     y_mm = App_SerialCommand_ScaleFloatRounded(pose.y_m, 1000.0f);
@@ -434,6 +444,13 @@ static void App_SerialCommand_LogStatus(void)
             (unsigned int)path_count,
             ReturnExecutor_StateName(return_state),
             (App_ButtonControl_IsReady() != 0U) ? "ready" : "init");
+    APP_LOG("[STATUS] map cell=(%d,%d) heading=%c visited=%u known_edges=%u walls=%u",
+            map_summary.robot_cx,
+            map_summary.robot_cy,
+            AppMap_DirChar(map_summary.heading),
+            (unsigned int)map_summary.visited_count,
+            (unsigned int)map_summary.known_edges,
+            (unsigned int)map_summary.walls);
 }
 
 static int32_t App_SerialCommand_ScaleFloatRounded(float value, float multiplier)

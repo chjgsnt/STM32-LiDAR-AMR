@@ -94,6 +94,7 @@ The final report records:
 - LiDAR obstacle avoidance
 - AMR state machine
 - Differential-drive odometry pose and velocity telemetry
+- Lightweight 5x5 cell-level occupancy map
 - OLED status UI
 - USER BUTTON offline control
 - Serial telemetry and commands
@@ -110,9 +111,17 @@ constants are centralized in `Core/Inc/app_odometry.h`.
 timeout and encoder stall faults stop motor outputs and require an explicit
 button or serial reset before motion can resume.
 
-Scan matching, occupancy-grid mapping, and full planner recovery are not yet
-implemented. They are future extensions on top of the current odometry pose and
-LiDAR telemetry.
+## Lightweight Cell Map
+
+`app_map` adds a fixed 5x5 cell-level occupancy map for the 70 cm maze
+benchmark. It uses odometry pose to mark visited cells and LiDAR front/left/right
+sector distances to mark known wall edges. This is a resource-constrained
+embedded preparation layer for future OGM/frontier exploration, not full SLAM or
+scan matching.
+
+Scan matching, full occupancy-grid SLAM, and full planner recovery are not yet
+implemented. They are future extensions on top of the current odometry pose,
+LiDAR telemetry, and cell map.
 
 ## Known Limitations
 

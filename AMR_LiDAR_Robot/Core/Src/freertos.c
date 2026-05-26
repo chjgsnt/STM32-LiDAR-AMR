@@ -29,6 +29,7 @@
 #include "app_button_control.h"
 #include "app_fault.h"
 #include "app_odometry.h"
+#include "app_map.h"
 #include "app_safety.h"
 #include "app_serial_command.h"
 #include "app_ui.h"
@@ -568,6 +569,7 @@ void StartTask05(void *argument)
   AMR_Init();
   App_LidarObstacleAvoidance_Init();
   Odom_Init();
+  AppMap_Init();
   ReturnPath_Init();
   AppFault_Init();
   App_Safety_Init();
@@ -579,6 +581,7 @@ void StartTask05(void *argument)
     AMR_StateMachine_Update();
     App_ButtonControl_Update();
     Odom_Update();
+    AppMap_UpdateFromPoseAndLidar();
     App_Safety_Update();
     amr_state = AMR_GetState();
 

@@ -57,6 +57,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/app_lidar_stop_check.c
     Core/Src/app_motor_forced_spin_check.c
     Core/Src/app_no_servo_obstacle.c
+    Core/Src/app_map.c
     Core/Src/app_odometry.c
     Core/Src/app_obstacle.c
     Core/Src/app_obstacle_motor.c
