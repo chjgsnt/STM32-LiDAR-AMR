@@ -96,8 +96,8 @@ The final report records:
 - Differential-drive odometry pose and velocity telemetry
 - Lightweight 5x5 cell-level occupancy map
 - Lightweight DFS/frontier-style exploration skeleton
-- Embedded OLED UI pages and compact telemetry output
-- OLED status UI
+- Embedded UI pages via serial/Bluetooth telemetry
+- OLED hardware display disabled by default for pin/resource stability
 - USER BUTTON offline control
 - Serial telemetry and commands
 - Safety fault handling
@@ -133,9 +133,13 @@ return executor remain in control of chassis motion.
 
 ## Embedded UI And Telemetry
 
-`app_ui` provides three low-rate SSD1306 OLED status pages: system/fault/LiDAR
-and adjustable parameters, odometry pose/velocity, and map/explorer status. If
-the OLED is not detected, the same four-line page falls back to serial logs.
+`app_ui` provides three low-rate status pages: system/fault/LiDAR and
+adjustable parameters, odometry pose/velocity, and map/explorer status. The
+SSD1306 OLED hardware path is disabled by default due to pin/resource
+constraints. UI evidence is provided through compact serial/Bluetooth telemetry
+and serial page fallback instead. This is an engineering trade-off to prioritise
+LiDAR, encoder, motor control, fault handling, and benchmark stability.
+
 Serial commands `ui`, `page 0`, `page 1`, `page 2`, and `tel` support UI
 inspection, page switching, and compact telemetry for validation videos.
 

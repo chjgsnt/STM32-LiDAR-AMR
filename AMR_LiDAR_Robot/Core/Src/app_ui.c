@@ -10,14 +10,20 @@
 #include "app_safety.h"
 #include "bringup_log.h"
 #include "chassis.h"
+#if APP_UI_OLED_ENABLE
 #include "i2c.h"
 #include "ssd1306.h"
+#endif
 #include "stm32f4xx_hal.h"
 
 #include <stdio.h>
 
-#ifndef AMR_UI_ENABLE_OLED
-#define AMR_UI_ENABLE_OLED 1
+#ifndef APP_UI_OLED_ENABLE
+#define APP_UI_OLED_ENABLE 0
+#endif
+
+#ifndef APP_UI_SERIAL_FALLBACK_ENABLE
+#define APP_UI_SERIAL_FALLBACK_ENABLE 1
 #endif
 
 #define AMR_UI_UPDATE_MS 200U
@@ -83,8 +89,10 @@ static void App_UI_BuildLines(char line1[22], char line2[22], char line3[22], ch
 static void App_UI_BuildSystemPage(char line1[22], char line2[22], char line3[22], char line4[22]);
 static void App_UI_BuildOdomPage(char line1[22], char line2[22], char line3[22], char line4[22]);
 static void App_UI_BuildMapPage(char line1[22], char line2[22], char line3[22], char line4[22]);
+#if APP_UI_OLED_ENABLE
 static void App_UI_TryOledInit(uint32_t now_ms);
 static void App_UI_WriteOled(const char *line1, const char *line2, const char *line3, const char *line4);
+#endif
 static void App_UI_UpdateParameters(uint32_t now_ms);
 static uint8_t App_UI_ReadAdcRaw(uint16_t *raw);
 static uint16_t App_UI_MapRawToRange(uint16_t raw, uint16_t min_value, uint16_t max_value);
@@ -114,7 +122,7 @@ void App_UI_Init(void)
     app_ui_adc_valid = 0U;
 
     APP_LOG("[UI] init oled_enable=%u update_ms=%u pages=%u adc_enable=%u",
-            (unsigned int)AMR_UI_ENABLE_OLED,
+            (unsigned int)APP_UI_OLED_ENABLE,
             (unsigned int)AMR_UI_UPDATE_MS,
             (unsigned int)AMR_UI_PAGE_COUNT,
             (unsigned int)APP_UI_ADC_ENABLE);
@@ -138,7 +146,7 @@ void App_UI_Update(void)
     App_UI_UpdateParameters(now_ms);
     App_UI_BuildLines(line1, line2, line3, line4);
 
-#if AMR_UI_ENABLE_OLED
+#if APP_UI_OLED_ENABLE
     App_UI_TryOledInit(now_ms);
 
     if (app_ui_oled_ready != 0U)
@@ -147,6 +155,7 @@ void App_UI_Update(void)
     }
 #endif
 
+#if APP_UI_SERIAL_FALLBACK_ENABLE
     if ((app_ui_oled_ready == 0U) &&
         ((app_ui_last_serial_log_ms == 0U) ||
          ((now_ms - app_ui_last_serial_log_ms) >= AMR_UI_SERIAL_LOG_MS)))
@@ -154,6 +163,7 @@ void App_UI_Update(void)
         app_ui_last_serial_log_ms = now_ms;
         APP_LOG("[UI] %s | %s | %s | %s", line1, line2, line3, line4);
     }
+#endif
 
 #if APP_TELEMETRY_AUTO_ENABLE
     if ((app_ui_last_telemetry_ms == 0U) ||
@@ -197,9 +207,10 @@ void AppUI_NextPage(void)
 
 void AppUI_PrintStatus(void)
 {
-    APP_LOG("[UI] page=%u oled=%s adc=%s raw=%u speed_lim=%u obs_th=%u wall_th=%u",
+    APP_LOG("[UI] page=%u oled=%s serial_ui=%s adc=%s raw=%u speed_lim=%u obs_th=%u wall_th=%u",
             (unsigned int)app_ui_page,
-            (app_ui_oled_ready != 0U) ? "ready" : "fallback",
+            (APP_UI_OLED_ENABLE != 0) ? ((app_ui_oled_ready != 0U) ? "ready" : "init") : "disabled",
+            (APP_UI_SERIAL_FALLBACK_ENABLE != 0) ? "enabled" : "disabled",
             (app_ui_adc_valid != 0U) ? "valid" : "default",
             (unsigned int)app_ui_adc_raw,
             (unsigned int)app_ui_speed_limit,
@@ -400,6 +411,7 @@ static void App_UI_BuildMapPage(char line1[22], char line2[22], char line3[22], 
                    (unsigned int)map.walls);
 }
 
+#if APP_UI_OLED_ENABLE
 static void App_UI_TryOledInit(uint32_t now_ms)
 {
     if (app_ui_oled_ready != 0U)
@@ -426,6 +438,7 @@ static void App_UI_TryOledInit(uint32_t now_ms)
         APP_LOG("[UI] OLED ready");
     }
 }
+#endif
 
 static void App_UI_UpdateParameters(uint32_t now_ms)
 {
@@ -624,6 +637,7 @@ static const char *App_UI_ExplorerShortName(AppExplorerState_t state)
     }
 }
 
+#if APP_UI_OLED_ENABLE
 static void App_UI_WriteOled(const char *line1, const char *line2, const char *line3, const char *line4)
 {
     if (HAL_I2C_GetState(&hi2c1) != HAL_I2C_STATE_READY)
@@ -642,3 +656,4 @@ static void App_UI_WriteOled(const char *line1, const char *line2, const char *l
         APP_LOG("[UI] OLED update failed, serial fallback active");
     }
 }
+#endif

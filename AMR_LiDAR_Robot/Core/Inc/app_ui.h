@@ -11,6 +11,14 @@
 #define APP_TELEMETRY_PERIOD_MS 1000U
 #endif
 
+#ifndef APP_UI_OLED_ENABLE
+#define APP_UI_OLED_ENABLE 0
+#endif
+
+#ifndef APP_UI_SERIAL_FALLBACK_ENABLE
+#define APP_UI_SERIAL_FALLBACK_ENABLE 1
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
