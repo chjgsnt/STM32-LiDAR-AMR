@@ -60,15 +60,16 @@ Experimental benchmark script commands:
 - `script_return`: start a short time-based Exit-to-Start script.
 - `script_auto`: start an experimental reactive maze mode for continuous
   obstacle-avoidance exploration attempts.
+- `script_return_auto`: start an experimental reactive return attempt.
 - `script_stop`: stop the script and safe stop.
-- `script_auto_stop`: alias for stopping `script_auto`.
+- `script_auto_stop`: alias for stopping the active experimental script.
 - `script_status`: print script state, step index, action, elapsed, and remaining time.
 - `script_reset`: reset script state.
 
 The benchmark script modes are experimental. The fixed scripts are time-based,
-and `script_auto` is a simple reactive fallback for continuous maze exploration
-attempts. They are not claimed as full autonomous SLAM, mapping, A*, or
-Start-to-Exit-to-Return navigation.
+and `script_auto` / `script_return_auto` are simple reactive fallbacks for
+continuous maze exploration and return attempts. They are not claimed as full
+autonomous SLAM, mapping, A*, or Start-to-Exit-to-Return navigation.
 
 ## 3. Pre-Demo Checklist
 
@@ -203,30 +204,45 @@ Default `script_return` steps:
 4. `FORWARD`, duty `520`, duration `900 ms`.
 5. `STOP`, duration `200 ms`.
 
+Benchmark `FORWARD` actions use forward trim left=498, right=500. The fixed
+script `FORWARD` entries keep duty `520` as the nominal script field.
+
 Experimental `script_auto` reactive mode:
 
 - Starts only from `AMR_STATE_IDLE` with no active fault.
-- `SCRIPT_AUTO_FORWARD`: drive forward at duty `520`.
-- `SCRIPT_AUTO_TURN_RIGHT`: if fresh front LiDAR is below `250 mm`, stop and
+- `SCRIPT_AUTO_FORWARD`: drive forward with trim left=498, right=500.
+- `SCRIPT_AUTO_TURN_RIGHT`: if fresh front LiDAR is below `360 mm`, stop and
   turn right at duty `420` for `550 ms`.
 - `SCRIPT_AUTO_WAIT_CLEAR`: if front LiDAR is invalid or stale, stop until
-  fresh front distance is above `450 mm`.
+  fresh front distance is above `520 mm`.
 - `script_stop`, `script_auto_stop`, fault, or ESTOP safe-stops immediately.
 - This mode is a continuous wall-follow/reactive exploration fallback and does
   not guarantee a complete Start-to-Exit-to-Return result.
 
+Experimental `script_return_auto` reactive mode:
+
+- Starts only from `AMR_STATE_IDLE` with no active fault.
+- `SCRIPT_RETURN_AUTO_FORWARD`: drive forward with trim left=498, right=500.
+- `SCRIPT_RETURN_AUTO_TURN_LEFT`: if fresh front LiDAR is below `360 mm`, stop
+  and turn left at duty `420` for `550 ms`.
+- `SCRIPT_RETURN_AUTO_WAIT_CLEAR`: if front LiDAR is invalid or stale, stop
+  until fresh front distance is above `520 mm`.
+- This mode is a reactive return attempt, not guaranteed map-based
+  return-to-start.
+
 PC13 button behavior on the `exp/benchmark-script` branch:
 
-- Short press in IDLE starts `script_auto` reactive exploration.
-- Short press while `script_auto` is running treats the current position as
-  Exit, stops auto, and starts `script_return`.
-- Short press while `script_return` is running stops return and safe-stops.
+- Short press 1 in IDLE starts `script_auto` reactive exploration.
+- Short press 2 while `script_auto` is running stops auto and arms return.
+- Short press 3 in IDLE starts `script_return_auto`.
+- Short press 4 while `script_return_auto` is running stops return and resets
+  the button flow to auto.
 - Short press in non-IDLE non-script states requests stop.
 - Short press in FAULT/ESTOP is ignored; use long press to recover.
 - Long press while running still triggers USER_ESTOP.
 - Long press in FAULT/ESTOP clears fault and resets odometry/map.
-- Exit detection is manual by PC13 short press; this is not autonomous goal
-  recognition.
+- Exit detection is manual by PC13 short press; `script_return_auto` is not
+  guaranteed map-based return-to-start.
 
 Safety behavior:
 

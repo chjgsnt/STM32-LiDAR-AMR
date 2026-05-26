@@ -150,8 +150,9 @@ Diagnostics and framework commands:
 | `script_exit` | Start experimental time-based Start-to-Exit script |
 | `script_return` | Start experimental time-based Exit-to-Start script |
 | `script_auto` | Start experimental reactive maze mode |
+| `script_return_auto` | Start experimental reactive return attempt |
 | `script_stop` | Stop experimental benchmark script and safe stop |
-| `script_auto_stop` | Stop experimental reactive maze mode and safe stop |
+| `script_auto_stop` | Alias for stopping the active experimental script |
 | `script_status` | Print experimental script state and current step |
 | `script_reset` | Reset experimental script state |
 
@@ -270,14 +271,15 @@ Experimental benchmark script mode:
 
 - On the `exp/benchmark-script` branch, PC13 short press is also mapped to the
   experimental script controller:
-  - short press in IDLE starts `script_auto` reactive exploration,
-  - short press while `script_auto` is running treats the current position as
-    Exit, stops auto, and starts `script_return`,
-  - short press while `script_return` is running stops return and safe-stops,
+  - short press 1 in IDLE starts `script_auto` reactive exploration,
+  - short press 2 while `script_auto` is running stops auto and arms return,
+  - short press 3 in IDLE starts `script_return_auto`,
+  - short press 4 while `script_return_auto` is running stops return and resets
+    the button flow to auto,
   - short press in non-IDLE non-script states requests stop,
   - short press in FAULT/ESTOP is ignored; long press is required to clear fault.
-- Exit detection in this benchmark flow is manual by PC13 short press; it is
-  not autonomous goal recognition.
+- Exit detection is manual by PC13 short press, and `script_return_auto` is a
+  reactive return attempt, not guaranteed map-based return-to-start.
 - PC13 long press behavior is unchanged:
   - running state: USER_ESTOP,
   - FAULT/ESTOP state: clear fault and reset odometry/map.
@@ -294,14 +296,20 @@ Experimental benchmark script mode:
   - stop for 200 ms.
 - `script_auto` experimental reactive maze mode:
   - starts only from IDLE with no active fault,
-  - forward duty 520 while front LiDAR is fresh and clear,
-  - stop and turn right duty 420 for 550 ms when front is below 250 mm,
+  - forward trim left=498, right=500 while front LiDAR is fresh and clear,
+  - stop and turn right duty 420 for 550 ms when front is below 360 mm,
   - stop and wait when front LiDAR is invalid or stale,
-  - resume forward when front is above 450 mm.
+  - resume forward when front is above 520 mm.
+- `script_return_auto` experimental reactive return attempt:
+  - uses the same forward trim and obstacle thresholds as `script_auto`,
+  - turns left for 550 ms when front is below 360 mm,
+  - runs continuously until `script_stop`, short press, fault, or ESTOP.
+- Forward trim for benchmark `FORWARD` actions: left=498, right=500. Fixed
+  script forward entries keep duty 520 as the nominal script field.
 - The fixed scripts are experimental and time-based; `script_auto` is
   experimental and reactive. Tune duty and duration in
   `Core/Src/app_benchmark_script.c` for a specific 5x5 maze layout.
 - Forward script steps stop and wait if LiDAR front distance is below the script
   obstacle threshold. Fault or USER_ESTOP aborts the script immediately.
-- `script_auto` is intended for continuous obstacle-avoidance exploration
-  attempts only; it does not guarantee full Start-to-Exit-to-Return navigation.
+- `script_auto` and `script_return_auto` are reactive attempts only; they do not
+  guarantee full Start-to-Exit-to-Return navigation.

@@ -34,8 +34,8 @@ typedef enum
 {
     BTN_BENCH_NEXT_AUTO = 0,
     BTN_BENCH_AUTO_RUNNING,
-    BTN_BENCH_RETURN_RUNNING,
-    BTN_BENCH_DONE
+    BTN_BENCH_NEXT_RETURN,
+    BTN_BENCH_RETURN_RUNNING
 } ButtonBenchmarkMode;
 
 static uint8_t app_button_initialized = 0U;
@@ -149,20 +149,19 @@ static void App_ButtonControl_HandleShortPress(void)
 
     if (AppBenchmarkScript_IsAutoActive() != 0U)
     {
-        APP_LOG("[BTN] short action=auto_to_return");
-        AppBenchmarkScript_Stop("button_auto_to_return");
+        APP_LOG("[BTN] short action=auto_stop_next_return");
+        AppBenchmarkScript_Reset();
         Chassis_Stop();
-        AppBenchmarkScript_StartReturn();
-        app_button_benchmark_mode = BTN_BENCH_RETURN_RUNNING;
+        app_button_benchmark_mode = BTN_BENCH_NEXT_RETURN;
         return;
     }
 
-    if (AppBenchmarkScript_IsReturnActive() != 0U)
+    if (AppBenchmarkScript_IsReturnAutoActive() != 0U)
     {
-        APP_LOG("[BTN] short action=return_stop");
-        AppBenchmarkScript_Stop("button_return_stop");
+        APP_LOG("[BTN] short action=return_stop_next_auto");
+        AppBenchmarkScript_Reset();
         Chassis_Stop();
-        app_button_benchmark_mode = BTN_BENCH_DONE;
+        app_button_benchmark_mode = BTN_BENCH_NEXT_AUTO;
         return;
     }
 
@@ -190,18 +189,17 @@ static void App_ButtonControl_HandleShortPress(void)
         return;
     }
 
-    if ((app_button_benchmark_mode == BTN_BENCH_NEXT_AUTO) ||
-        (app_button_benchmark_mode == BTN_BENCH_DONE) ||
-        (app_button_benchmark_mode == BTN_BENCH_AUTO_RUNNING))
+    if (app_button_benchmark_mode == BTN_BENCH_NEXT_RETURN)
+    {
+        APP_LOG("[BTN] short action=return_auto");
+        AppBenchmarkScript_StartReturnAuto();
+        app_button_benchmark_mode = BTN_BENCH_RETURN_RUNNING;
+    }
+    else
     {
         APP_LOG("[BTN] short action=script_auto");
         AppBenchmarkScript_StartAuto();
         app_button_benchmark_mode = BTN_BENCH_AUTO_RUNNING;
-    }
-    else
-    {
-        APP_LOG("[BTN] short ignored reason=return_inactive");
-        app_button_benchmark_mode = BTN_BENCH_DONE;
     }
 }
 

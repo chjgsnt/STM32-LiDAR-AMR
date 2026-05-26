@@ -121,8 +121,9 @@ Diagnostics/framework commands:
 | `script_exit` | Start experimental time-based Start-to-Exit script |
 | `script_return` | Start experimental time-based Exit-to-Start script |
 | `script_auto` | Start experimental reactive maze mode |
+| `script_return_auto` | Start experimental reactive return attempt |
 | `script_stop` | Stop experimental benchmark script and safe stop |
-| `script_auto_stop` | Stop experimental reactive maze mode and safe stop |
+| `script_auto_stop` | Alias for stopping the active experimental script |
 | `script_status` | Print experimental script state |
 
 Typical demo flow:
@@ -140,6 +141,11 @@ PC13 user button:
 
 - Long press: trigger `USER_ESTOP`.
 - Long press again while in FAULT/ESTOP: clear fault and reset odometry/map.
+- On `exp/benchmark-script`, short press 1 starts `script_auto`; short press 2
+  stops auto and arms return; short press 3 starts `script_return_auto`; short
+  press 4 stops return and resets the button flow to auto.
+- Exit detection is manual by button press. `script_return_auto` is a reactive
+  return attempt, not guaranteed map-based return-to-start.
 
 ## 6. Documentation Links
 

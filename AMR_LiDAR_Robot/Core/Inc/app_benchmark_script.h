@@ -15,6 +15,9 @@ typedef enum
     SCRIPT_AUTO_FORWARD,
     SCRIPT_AUTO_TURN_RIGHT,
     SCRIPT_AUTO_WAIT_CLEAR,
+    SCRIPT_RETURN_AUTO_FORWARD,
+    SCRIPT_RETURN_AUTO_TURN_LEFT,
+    SCRIPT_RETURN_AUTO_WAIT_CLEAR,
     SCRIPT_DONE,
     SCRIPT_ABORTED,
     SCRIPT_FAULT
@@ -34,6 +37,7 @@ void AppBenchmarkScript_Init(void);
 void AppBenchmarkScript_StartExit(void);
 void AppBenchmarkScript_StartReturn(void);
 void AppBenchmarkScript_StartAuto(void);
+void AppBenchmarkScript_StartReturnAuto(void);
 void AppBenchmarkScript_Stop(const char *reason);
 void AppBenchmarkScript_Reset(void);
 void AppBenchmarkScript_Update(void);
@@ -41,6 +45,7 @@ void AppBenchmarkScript_PrintStatus(void);
 uint8_t AppBenchmarkScript_IsActive(void);
 uint8_t AppBenchmarkScript_IsAutoActive(void);
 uint8_t AppBenchmarkScript_IsReturnActive(void);
+uint8_t AppBenchmarkScript_IsReturnAutoActive(void);
 BenchmarkScriptState_t AppBenchmarkScript_GetState(void);
 const char *AppBenchmarkScript_StateName(BenchmarkScriptState_t state);
 const char *AppBenchmarkScript_ActionName(ScriptAction action);
