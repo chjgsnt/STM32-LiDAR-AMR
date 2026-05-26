@@ -66,8 +66,11 @@ static uint32_t script_last_log_ms = 0U;
 static uint8_t script_initialized = 0U;
 static uint8_t script_step_active = 0U;
 static uint8_t script_step_just_started = 0U;
+static ScriptAction script_current_action = SCRIPT_ACT_STOP;
+static uint8_t script_current_action_valid = 0U;
 
 static void AppBenchmarkScript_Start(const BenchmarkScriptDef_t *script);
+static void AppBenchmarkScript_ClearRuntime(void);
 static void AppBenchmarkScript_StartStep(uint32_t now_ms);
 static void AppBenchmarkScript_ApplyAction(const BenchmarkScriptStep_t *step);
 static void AppBenchmarkScript_FinishStep(uint32_t now_ms);
@@ -92,6 +95,8 @@ void AppBenchmarkScript_Init(void)
     script_last_log_ms = 0U;
     script_step_active = 0U;
     script_step_just_started = 0U;
+    script_current_action = SCRIPT_ACT_STOP;
+    script_current_action_valid = 0U;
     script_initialized = 1U;
     APP_LOG("SCRIPT: init obstacle_stop=%umm obstacle_clear=%umm lidar_stale=%ums",
             (unsigned int)SCRIPT_OBSTACLE_STOP_MM,
@@ -120,8 +125,7 @@ void AppBenchmarkScript_Stop(const char *reason)
     {
         Chassis_Stop();
         script_state = SCRIPT_ABORTED;
-        script_step_active = 0U;
-        script_step_just_started = 0U;
+        AppBenchmarkScript_ClearRuntime();
         APP_LOG("SCRIPT: stopped reason=%s", (reason != NULL) ? reason : "unspecified");
     }
 }
@@ -132,11 +136,7 @@ void AppBenchmarkScript_Reset(void)
     script_state = SCRIPT_IDLE;
     script_current = NULL;
     script_step_index = 0U;
-    script_step_start_ms = 0U;
-    script_wait_start_ms = 0U;
-    script_last_log_ms = 0U;
-    script_step_active = 0U;
-    script_step_just_started = 0U;
+    AppBenchmarkScript_ClearRuntime();
     script_initialized = 1U;
     APP_LOG("SCRIPT: reset");
 }
@@ -175,8 +175,7 @@ void AppBenchmarkScript_Update(void)
     {
         script_state = SCRIPT_DONE;
         Chassis_Stop();
-        script_step_active = 0U;
-        script_step_just_started = 0U;
+        AppBenchmarkScript_ClearRuntime();
         APP_LOG("SCRIPT: done %s", (script_current != NULL) ? script_current->name : "none");
         return;
     }
@@ -210,11 +209,32 @@ void AppBenchmarkScript_Update(void)
 void AppBenchmarkScript_PrintStatus(void)
 {
     const BenchmarkScriptStep_t *step = AppBenchmarkScript_CurrentStep();
+    uint8_t show_step = 0U;
     uint32_t now_ms = HAL_GetTick();
-    uint32_t elapsed_ms = (script_step_active != 0U) ? AppBenchmarkScript_ElapsedMs(now_ms, script_step_start_ms) : 0U;
+    uint32_t elapsed_ms = 0U;
     uint32_t remaining_ms = 0U;
+    uint8_t display_step_index = 0U;
+    const char *action_name = "NONE";
 
-    if (step != NULL)
+    if (((script_state == SCRIPT_RUNNING) || (script_state == SCRIPT_WAIT_OBSTACLE_CLEAR)) &&
+        (step != NULL) &&
+        (script_current_action_valid != 0U))
+    {
+        show_step = 1U;
+        action_name = AppBenchmarkScript_ActionName(script_current_action);
+        display_step_index = (uint8_t)(script_step_index + 1U);
+    }
+    else if ((script_state == SCRIPT_DONE) && (script_current != NULL))
+    {
+        display_step_index = script_current->count;
+    }
+
+    if ((show_step != 0U) && (script_step_active != 0U))
+    {
+        elapsed_ms = AppBenchmarkScript_ElapsedMs(now_ms, script_step_start_ms);
+    }
+
+    if ((show_step != 0U) && (step != NULL))
     {
         remaining_ms = (elapsed_ms < step->duration_ms) ? (step->duration_ms - elapsed_ms) : 0U;
     }
@@ -222,9 +242,9 @@ void AppBenchmarkScript_PrintStatus(void)
     APP_LOG("SCRIPT: status state=%s name=%s step=%u/%u action=%s elapsed=%lums remaining=%lums",
             AppBenchmarkScript_StateName(script_state),
             (script_current != NULL) ? script_current->name : "none",
-            (unsigned int)((step != NULL) ? (script_step_index + 1U) : script_step_index),
+            (unsigned int)display_step_index,
             (unsigned int)((script_current != NULL) ? script_current->count : 0U),
-            (step != NULL) ? AppBenchmarkScript_ActionName(step->action) : "NONE",
+            action_name,
             (unsigned long)elapsed_ms,
             (unsigned long)remaining_ms);
 }
@@ -295,6 +315,8 @@ static void AppBenchmarkScript_Start(const BenchmarkScriptDef_t *script)
         return;
     }
 
+    AppBenchmarkScript_ClearRuntime();
+
     if (AMR_GetState() != AMR_STATE_IDLE)
     {
         APP_LOG("SCRIPT: rejected reason=amr_state state=%s", AMR_StateName(AMR_GetState()));
@@ -310,13 +332,19 @@ static void AppBenchmarkScript_Start(const BenchmarkScriptDef_t *script)
     script_current = script;
     script_step_index = 0U;
     script_state = SCRIPT_RUNNING;
+    APP_LOG("SCRIPT: start %s count=%u", script->name, (unsigned int)script->count);
+    AppBenchmarkScript_StartStep(0U);
+}
+
+static void AppBenchmarkScript_ClearRuntime(void)
+{
+    script_step_active = 0U;
+    script_step_just_started = 0U;
     script_step_start_ms = 0U;
     script_wait_start_ms = 0U;
     script_last_log_ms = 0U;
-    script_step_active = 0U;
-    script_step_just_started = 0U;
-    APP_LOG("SCRIPT: start %s count=%u", script->name, (unsigned int)script->count);
-    AppBenchmarkScript_StartStep(0U);
+    script_current_action = SCRIPT_ACT_STOP;
+    script_current_action_valid = 0U;
 }
 
 static void AppBenchmarkScript_StartStep(uint32_t now_ms)
@@ -328,8 +356,7 @@ static void AppBenchmarkScript_StartStep(uint32_t now_ms)
     {
         script_state = SCRIPT_DONE;
         Chassis_Stop();
-        script_step_active = 0U;
-        script_step_just_started = 0U;
+        AppBenchmarkScript_ClearRuntime();
         APP_LOG("SCRIPT: done %s", (script_current != NULL) ? script_current->name : "none");
         return;
     }
@@ -337,6 +364,8 @@ static void AppBenchmarkScript_StartStep(uint32_t now_ms)
     script_step_start_ms = start_ms;
     script_step_active = 1U;
     script_step_just_started = 1U;
+    script_current_action = step->action;
+    script_current_action_valid = 1U;
     APP_LOG("SCRIPT: step=%u/%u action=%s duty=%d dur=%lums note=%s",
             (unsigned int)(script_step_index + 1U),
             (unsigned int)((script_current != NULL) ? script_current->count : 0U),
@@ -349,8 +378,8 @@ static void AppBenchmarkScript_StartStep(uint32_t now_ms)
         AppBenchmarkScript_CheckForwardSafety(start_ms);
         if (script_state != SCRIPT_RUNNING)
         {
-            script_step_active = 0U;
-            script_step_just_started = 0U;
+            script_current_action = step->action;
+            script_current_action_valid = 1U;
             return;
         }
     }
@@ -410,16 +439,16 @@ static void AppBenchmarkScript_FinishStep(uint32_t now_ms)
             (unsigned long)elapsed_ms);
 
     script_step_index++;
-    script_step_active = 0U;
-    script_step_just_started = 0U;
     if ((script_current == NULL) || (script_step_index >= script_current->count))
     {
         script_state = SCRIPT_DONE;
         Chassis_Stop();
+        AppBenchmarkScript_ClearRuntime();
         APP_LOG("SCRIPT: done %s", (script_current != NULL) ? script_current->name : "none");
         return;
     }
 
+    AppBenchmarkScript_ClearRuntime();
     AppBenchmarkScript_StartStep(now_ms);
 }
 
@@ -431,8 +460,7 @@ static void AppBenchmarkScript_ResumeCurrentStep(uint32_t now_ms)
     {
         script_state = SCRIPT_DONE;
         Chassis_Stop();
-        script_step_active = 0U;
-        script_step_just_started = 0U;
+        AppBenchmarkScript_ClearRuntime();
         APP_LOG("SCRIPT: done %s", (script_current != NULL) ? script_current->name : "none");
         return;
     }
@@ -450,8 +478,7 @@ static void AppBenchmarkScript_Abort(BenchmarkScriptState_t state, const char *r
 {
     Chassis_Stop();
     script_state = state;
-    script_step_active = 0U;
-    script_step_just_started = 0U;
+    AppBenchmarkScript_ClearRuntime();
     APP_LOG("SCRIPT: abort state=%s reason=%s",
             AppBenchmarkScript_StateName(state),
             (reason != NULL) ? reason : "unspecified");
