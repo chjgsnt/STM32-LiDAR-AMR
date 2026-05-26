@@ -125,6 +125,8 @@ encoder diagnostics while preventing pose integration and map updates. This
 allows LiDAR, motor, and ESTOP tests to run without incorrect odometry polluting
 the map. Ground calibration should verify encoder direction and tick-to-distance
 before using map/explorer behavior.
+Encoder diagnostic showed left forward tick sign should be positive, so odometry
+uses `ODOM_LEFT_TICK_SIGN=+1` and `ODOM_RIGHT_TICK_SIGN=+1`.
 
 Lifted-wheel tests can exaggerate odometry because the wheels can free-spin
 without ground traction. Final benchmark validation should be performed on the

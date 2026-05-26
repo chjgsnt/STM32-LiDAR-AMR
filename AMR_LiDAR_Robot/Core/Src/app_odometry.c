@@ -9,17 +9,15 @@
 #include <stdint.h>
 
 /*
- * Positive chassis forward command uses CHASSIS_LEFT_SIGN=-1 and
- * CHASSIS_RIGHT_SIGN=1 on the verified hardware. These macros convert raw
- * timer deltas into positive-forward wheel travel. If forward logs show one
- * side negative, flip that side here.
+ * Encoder diagnostic showed left-wheel forward ticks are positive in odometry
+ * coordinates. Keep odometry signs independent from chassis motor polarity.
  */
 #ifndef ODOM_LEFT_TICK_SIGN
-#define ODOM_LEFT_TICK_SIGN CHASSIS_LEFT_SIGN
+#define ODOM_LEFT_TICK_SIGN (1)
 #endif
 
 #ifndef ODOM_RIGHT_TICK_SIGN
-#define ODOM_RIGHT_TICK_SIGN CHASSIS_RIGHT_SIGN
+#define ODOM_RIGHT_TICK_SIGN (1)
 #endif
 
 #if APP_ODO_AUTO_PRINT_ENABLE
