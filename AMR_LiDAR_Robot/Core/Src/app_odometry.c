@@ -23,6 +23,7 @@
 #endif
 
 #define ODO_LOG_INTERVAL_MS 1000U
+#define ODO_WARN_INTERVAL_MS 1000U
 #define ODOM_PI 3.14159265358979323846f
 
 static OdomPose_t odom_pose = {0.0f, 0.0f, 0.0f};
@@ -33,15 +34,18 @@ static float odom_linear_velocity_mps = 0.0f;
 static float odom_angular_velocity_radps = 0.0f;
 static uint32_t odom_last_update_ms = 0U;
 static uint32_t odom_last_log_ms = 0U;
+static uint32_t odom_last_warn_ms = 0U;
 static uint8_t odom_initialized = 0U;
 
 static float Odom_TicksToMeters(int32_t ticks);
 static float Odom_NormalizeAngle(float angle_rad);
+static float Odom_AbsFloat(float value);
 static int32_t Odom_ScaleFloatRounded(float value, float multiplier);
 static const char *Odom_FixedSign(int32_t value);
 static uint32_t Odom_FixedWhole(int32_t value, int32_t decimal_scale);
 static uint32_t Odom_FixedFraction(int32_t value, int32_t decimal_scale);
 static void Odom_Log(uint32_t now_ms);
+static void Odom_LogLargeStep(uint32_t now_ms, float ds_m, float dtheta_rad, float dt_s);
 
 void Odom_Init(void)
 {
@@ -56,20 +60,27 @@ void Odom_Init(void)
     odom_last_sample.signed_right_delta = 0;
     odom_last_sample.delta_left_m = 0.0f;
     odom_last_sample.delta_right_m = 0.0f;
+    odom_last_sample.delta_center_m = 0.0f;
+    odom_last_sample.delta_theta_rad = 0.0f;
+    odom_last_sample.dt_s = 0.0f;
     odom_last_sample.last_update_ms = HAL_GetTick();
+    odom_last_sample.step_skipped = 0U;
     odom_linear_velocity_mps = 0.0f;
     odom_angular_velocity_radps = 0.0f;
     odom_last_update_ms = odom_last_sample.last_update_ms;
     odom_last_log_ms = odom_last_sample.last_update_ms;
+    odom_last_warn_ms = 0U;
     odom_initialized = 1U;
 
-    APP_LOG("ODO: init radius_mm=%lu wheel_base_mm=%lu ticks_per_rev=%lu gear_x100=%lu left_sign=%d right_sign=%d",
+    APP_LOG("ODO: init radius_mm=%lu wheel_base_mm=%lu ticks_per_rev=%lu gear_x100=%lu left_sign=%d right_sign=%d max_step_mm=%lu max_dth_mrad=%lu",
             (unsigned long)Odom_FixedWhole(Odom_ScaleFloatRounded(ODO_WHEEL_RADIUS_M, 1000.0f), 1),
             (unsigned long)Odom_FixedWhole(Odom_ScaleFloatRounded(ODO_WHEEL_BASE_M, 1000.0f), 1),
             (unsigned long)Odom_FixedWhole(Odom_ScaleFloatRounded(ODO_ENCODER_TICKS_PER_REV, 1.0f), 1),
             (unsigned long)Odom_FixedWhole(Odom_ScaleFloatRounded(ODO_GEAR_RATIO, 100.0f), 1),
             (int)ODOM_LEFT_TICK_SIGN,
-            (int)ODOM_RIGHT_TICK_SIGN);
+            (int)ODOM_RIGHT_TICK_SIGN,
+            (unsigned long)Odom_FixedWhole(Odom_ScaleFloatRounded(APP_ODO_MAX_LINEAR_STEP_M, 1000.0f), 1),
+            (unsigned long)Odom_FixedWhole(Odom_ScaleFloatRounded(APP_ODO_MAX_ANGULAR_STEP_RAD, 1000.0f), 1));
 }
 
 void Odom_Update(void)
@@ -103,6 +114,7 @@ void AppOdo_Update(float dt_s)
     float dc;
     float dtheta;
     float theta_mid;
+    uint8_t step_skipped = 0U;
     uint32_t now_ms = HAL_GetTick();
 
     if (odom_initialized == 0U)
@@ -123,12 +135,28 @@ void AppOdo_Update(float dt_s)
     dr = Odom_TicksToMeters(signed_right_delta);
     dc = (dl + dr) * 0.5f;
     dtheta = (dr - dl) / ODO_WHEEL_BASE_M;
-    theta_mid = odom_pose.theta_rad + (dtheta * 0.5f);
 
-    odom_pose.x_m += dc * cosf(theta_mid);
-    odom_pose.y_m += dc * sinf(theta_mid);
-    odom_pose.theta_rad = Odom_NormalizeAngle(odom_pose.theta_rad + dtheta);
-    if (dt_s > 0.0001f)
+    if ((Odom_AbsFloat(dc) > APP_ODO_MAX_LINEAR_STEP_M) ||
+        (Odom_AbsFloat(dtheta) > APP_ODO_MAX_ANGULAR_STEP_RAD))
+    {
+        step_skipped = 1U;
+        Odom_LogLargeStep(now_ms, dc, dtheta, dt_s);
+    }
+
+    if (step_skipped == 0U)
+    {
+        theta_mid = odom_pose.theta_rad + (dtheta * 0.5f);
+        odom_pose.x_m += dc * cosf(theta_mid);
+        odom_pose.y_m += dc * sinf(theta_mid);
+        odom_pose.theta_rad = Odom_NormalizeAngle(odom_pose.theta_rad + dtheta);
+    }
+    else
+    {
+        dc = 0.0f;
+        dtheta = 0.0f;
+    }
+
+    if ((step_skipped == 0U) && (dt_s > 0.0001f))
     {
         odom_linear_velocity_mps = dc / dt_s;
         odom_angular_velocity_radps = dtheta / dt_s;
@@ -145,7 +173,11 @@ void AppOdo_Update(float dt_s)
     odom_last_sample.signed_right_delta = signed_right_delta;
     odom_last_sample.delta_left_m = dl;
     odom_last_sample.delta_right_m = dr;
+    odom_last_sample.delta_center_m = (dl + dr) * 0.5f;
+    odom_last_sample.delta_theta_rad = (dr - dl) / ODO_WHEEL_BASE_M;
+    odom_last_sample.dt_s = dt_s;
     odom_last_sample.last_update_ms = now_ms;
+    odom_last_sample.step_skipped = step_skipped;
     odom_last_update_ms = now_ms;
 
     if ((now_ms - odom_last_log_ms) >= ODO_LOG_INTERVAL_MS)
@@ -170,9 +202,14 @@ void Odom_Reset(void)
     odom_last_sample.signed_right_delta = 0;
     odom_last_sample.delta_left_m = 0.0f;
     odom_last_sample.delta_right_m = 0.0f;
+    odom_last_sample.delta_center_m = 0.0f;
+    odom_last_sample.delta_theta_rad = 0.0f;
+    odom_last_sample.dt_s = 0.0f;
     odom_last_sample.last_update_ms = HAL_GetTick();
+    odom_last_sample.step_skipped = 0U;
     odom_last_update_ms = odom_last_sample.last_update_ms;
     odom_last_log_ms = odom_last_sample.last_update_ms;
+    odom_last_warn_ms = 0U;
     odom_initialized = 1U;
 
     APP_LOG("[ODOM] reset");
@@ -248,6 +285,44 @@ void AppOdo_GetVelocity(float *v, float *w)
     }
 }
 
+void AppOdo_PrintDebug(void)
+{
+    OdomSample_t sample;
+    int32_t dl_mm;
+    int32_t dr_mm;
+    int32_t ds_mm;
+    int32_t dtheta_mrad;
+    int32_t dt_ms;
+
+    if (Odom_GetLastSample(&sample) == false)
+    {
+        APP_LOG("ODO_DBG: unavailable");
+        return;
+    }
+
+    dl_mm = Odom_ScaleFloatRounded(sample.delta_left_m, 1000.0f);
+    dr_mm = Odom_ScaleFloatRounded(sample.delta_right_m, 1000.0f);
+    ds_mm = Odom_ScaleFloatRounded(sample.delta_center_m, 1000.0f);
+    dtheta_mrad = Odom_ScaleFloatRounded(sample.delta_theta_rad, 1000.0f);
+    dt_ms = Odom_ScaleFloatRounded(sample.dt_s, 1000.0f);
+
+    APP_LOG("ODO_DBG: rawL=%ld rawR=%ld signedL=%ld signedR=%ld dl_mm=%s%lu dr_mm=%s%lu ds_mm=%s%lu dth_mrad=%s%lu dt_ms=%lu skipped=%u",
+            (long)sample.raw_left_delta,
+            (long)sample.raw_right_delta,
+            (long)sample.signed_left_delta,
+            (long)sample.signed_right_delta,
+            Odom_FixedSign(dl_mm),
+            (unsigned long)Odom_FixedWhole(dl_mm, 1),
+            Odom_FixedSign(dr_mm),
+            (unsigned long)Odom_FixedWhole(dr_mm, 1),
+            Odom_FixedSign(ds_mm),
+            (unsigned long)Odom_FixedWhole(ds_mm, 1),
+            Odom_FixedSign(dtheta_mrad),
+            (unsigned long)Odom_FixedWhole(dtheta_mrad, 1),
+            (unsigned long)Odom_FixedWhole(dt_ms, 1),
+            (unsigned int)sample.step_skipped);
+}
+
 static float Odom_TicksToMeters(int32_t ticks)
 {
     return ((float)ticks * (2.0f * ODOM_PI * ODO_WHEEL_RADIUS_M)) /
@@ -267,6 +342,11 @@ static float Odom_NormalizeAngle(float angle_rad)
     }
 
     return angle_rad;
+}
+
+static float Odom_AbsFloat(float value)
+{
+    return (value < 0.0f) ? -value : value;
 }
 
 static int32_t Odom_ScaleFloatRounded(float value, float multiplier)
@@ -326,4 +406,30 @@ static void Odom_Log(uint32_t now_ms)
             Odom_FixedSign(w_mradps),
             (unsigned long)Odom_FixedWhole(w_mradps, 1000),
             (unsigned long)Odom_FixedFraction(w_mradps, 1000));
+}
+
+static void Odom_LogLargeStep(uint32_t now_ms, float ds_m, float dtheta_rad, float dt_s)
+{
+    int32_t ds_mm;
+    int32_t dtheta_mrad;
+    int32_t dt_ms;
+
+    if ((odom_last_warn_ms != 0U) && ((now_ms - odom_last_warn_ms) < ODO_WARN_INTERVAL_MS))
+    {
+        return;
+    }
+
+    odom_last_warn_ms = now_ms;
+    ds_mm = Odom_ScaleFloatRounded(ds_m, 1000.0f);
+    dtheta_mrad = Odom_ScaleFloatRounded(dtheta_rad, 1000.0f);
+    dt_ms = Odom_ScaleFloatRounded(dt_s, 1000.0f);
+
+    APP_LOG("ODO: warn large step ds=%s%lu.%03lu dth=%s%lu.%03lu dt=%lums skipped",
+            Odom_FixedSign(ds_mm),
+            (unsigned long)Odom_FixedWhole(ds_mm, 1000),
+            (unsigned long)Odom_FixedFraction(ds_mm, 1000),
+            Odom_FixedSign(dtheta_mrad),
+            (unsigned long)Odom_FixedWhole(dtheta_mrad, 1000),
+            (unsigned long)Odom_FixedFraction(dtheta_mrad, 1000),
+            (unsigned long)Odom_FixedWhole(dt_ms, 1));
 }

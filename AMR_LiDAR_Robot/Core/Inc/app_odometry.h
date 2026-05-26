@@ -27,6 +27,18 @@
 #define ODO_GEAR_RATIO 1.0f
 #endif
 
+#ifndef APP_ODO_MAX_LINEAR_STEP_M
+#define APP_ODO_MAX_LINEAR_STEP_M 0.10f
+#endif
+
+#ifndef APP_ODO_MAX_ANGULAR_STEP_RAD
+#define APP_ODO_MAX_ANGULAR_STEP_RAD 0.80f
+#endif
+
+#ifndef APP_ODO_DEBUG_ENABLE
+#define APP_ODO_DEBUG_ENABLE 0
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -46,7 +58,11 @@ typedef struct
     int32_t signed_right_delta;
     float delta_left_m;
     float delta_right_m;
+    float delta_center_m;
+    float delta_theta_rad;
+    float dt_s;
     uint32_t last_update_ms;
+    uint8_t step_skipped;
 } OdomSample_t;
 
 void Odom_Init(void);
@@ -60,6 +76,7 @@ void AppOdo_Reset(void);
 void AppOdo_Update(float dt_s);
 void AppOdo_GetPose(float *x, float *y, float *theta);
 void AppOdo_GetVelocity(float *v, float *w);
+void AppOdo_PrintDebug(void);
 
 #ifdef __cplusplus
 }

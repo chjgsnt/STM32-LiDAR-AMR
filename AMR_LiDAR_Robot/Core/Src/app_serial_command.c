@@ -78,7 +78,7 @@ void App_SerialCommand_Init(void)
     rx_status = App_SerialCommand_StartRx();
     if ((rx_status == HAL_OK) || (rx_status == HAL_BUSY))
     {
-        APP_LOG("[CMD] ready uart=huart2 commands=start stop explore return estop reset_fault odom_reset status map grid exp ui page tel");
+        APP_LOG("[CMD] ready uart=huart2 commands=start stop explore return estop reset_fault odom_reset odom_dbg map_reset status map grid exp ui page tel");
         APP_LOG("[CMD] use newline: start<Enter> or no-newline command timeout=%u ms",
                 (unsigned int)APP_CMD_NO_NEWLINE_TIMEOUT_MS);
     }
@@ -311,6 +311,15 @@ static void App_SerialCommand_HandleLine(const char *line)
     else if (strcmp(line, "odom_reset") == 0)
     {
         Odom_Reset();
+        AppMap_Reset();
+    }
+    else if (strcmp(line, "odom_dbg") == 0)
+    {
+        AppOdo_PrintDebug();
+    }
+    else if (strcmp(line, "map_reset") == 0)
+    {
+        AppMap_Reset();
     }
     else if (strcmp(line, "status") == 0)
     {
@@ -368,6 +377,8 @@ static uint8_t App_SerialCommand_IsKnownCommand(const char *line)
             (strcmp(line, "estop") == 0) ||
             (strcmp(line, "reset_fault") == 0) ||
             (strcmp(line, "odom_reset") == 0) ||
+            (strcmp(line, "odom_dbg") == 0) ||
+            (strcmp(line, "map_reset") == 0) ||
             (strcmp(line, "status") == 0) ||
             (strcmp(line, "map") == 0) ||
             (strcmp(line, "grid") == 0) ||
@@ -532,6 +543,7 @@ static void App_SerialCommand_LogStatus(void)
             exp_status.target_cy,
             (unsigned int)exp_status.path_len,
             (exp_status.skeleton_only != 0U) ? "skeleton" : "drive");
+    AppOdo_PrintDebug();
 }
 
 static int32_t App_SerialCommand_ScaleFloatRounded(float value, float multiplier)

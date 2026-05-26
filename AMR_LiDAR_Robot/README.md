@@ -113,6 +113,15 @@ constants are centralized in `Core/Inc/app_odometry.h`.
 timeout and encoder stall faults stop motor outputs and require an explicit
 button or serial reset before motion can resume.
 
+Odometry includes a sanity guard for validation: unusually large single-step
+linear or angular encoder deltas are skipped before they can push the pose and
+cell map far outside the maze. The `odom_dbg` and `map_reset` serial commands
+help inspect encoder deltas and recover the 5x5 map during testing.
+
+Lifted-wheel tests can exaggerate odometry because the wheels can free-spin
+without ground traction. Final benchmark validation should be performed on the
+ground after encoder direction and wheel calibration checks.
+
 ## Lightweight Cell Map
 
 `app_map` adds a fixed 5x5 cell-level occupancy map for the 70 cm maze

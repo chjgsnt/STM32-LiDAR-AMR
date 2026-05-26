@@ -1,5 +1,7 @@
 #include "app_map.h"
 
+#include "amr_system.h"
+#include "app_fault.h"
 #include "app_lidar.h"
 #include "app_odometry.h"
 #include "bringup_log.h"
@@ -25,6 +27,7 @@ static uint32_t app_map_last_bounds_warn_ms = 0U;
 static uint8_t app_map_initialized = 0U;
 
 static uint8_t AppMap_InBounds(int cx, int cy);
+static uint8_t AppMap_StateAllowsUpdate(AMR_State_t state);
 static void AppMap_SetWallLocal(int cx, int cy, AppMapDir dir, uint8_t has_wall);
 static uint8_t *AppMap_WallPtr(AppMapCell_t *cell, AppMapDir dir);
 static uint8_t *AppMap_KnownPtr(AppMapCell_t *cell, AppMapDir dir);
@@ -67,6 +70,7 @@ void AppMap_Reset(void)
     app_map_last_bounds_warn_ms = 0U;
     app_map_initialized = 1U;
     AppMap_MarkVisited(0, 0);
+    APP_LOG("MAP: reset cell=(0,0)");
 }
 
 void AppMap_UpdateFromPoseAndLidar(void)
@@ -75,6 +79,7 @@ void AppMap_UpdateFromPoseAndLidar(void)
     const AppLidarStatus *lidar;
     uint32_t now_ms;
     uint32_t lidar_age_ms;
+    AMR_State_t state;
     uint8_t clamped;
     int cx;
     int cy;
@@ -94,6 +99,12 @@ void AppMap_UpdateFromPoseAndLidar(void)
         return;
     }
     app_map_last_update_ms = now_ms;
+
+    state = AMR_GetState();
+    if ((AppMap_StateAllowsUpdate(state) == 0U) || AppFault_IsActive())
+    {
+        return;
+    }
 
     if (Odom_GetPose(&pose) == false)
     {
@@ -424,6 +435,13 @@ char AppMap_DirChar(AppMapDir dir)
 static uint8_t AppMap_InBounds(int cx, int cy)
 {
     return ((cx >= 0) && (cx < APP_MAP_W) && (cy >= 0) && (cy < APP_MAP_H)) ? 1U : 0U;
+}
+
+static uint8_t AppMap_StateAllowsUpdate(AMR_State_t state)
+{
+    return ((state == AMR_STATE_EXPLORE) ||
+            (state == AMR_STATE_AVOID) ||
+            (state == AMR_STATE_RETURN)) ? 1U : 0U;
 }
 
 static void AppMap_SetWallLocal(int cx, int cy, AppMapDir dir, uint8_t has_wall)

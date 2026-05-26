@@ -3,6 +3,7 @@
 #include "amr_system.h"
 #include "app_explorer.h"
 #include "app_fault.h"
+#include "app_map.h"
 #include "app_odometry.h"
 #include "app_return_path.h"
 #include "app_safety.h"
@@ -187,6 +188,7 @@ static void App_ButtonControl_HandleLongPress(void)
         App_Safety_ClearFault();
         AppExplorer_Reset();
         Odom_Reset();
+        AppMap_Reset();
         AMR_RequestResetFault("button_long_clear_fault");
         return;
     }
