@@ -217,12 +217,16 @@ Experimental `script_auto` reactive mode:
 
 PC13 button behavior on the `exp/benchmark-script` branch:
 
-- Short press in IDLE alternates `script_exit` and `script_return`.
-- Short press while a script or `script_auto` is running stops it and safe-stops.
+- Short press in IDLE starts `script_auto` reactive exploration.
+- Short press while `script_auto` is running treats the current position as
+  Exit, stops auto, and starts `script_return`.
+- Short press while `script_return` is running stops return and safe-stops.
 - Short press in non-IDLE non-script states requests stop.
 - Short press in FAULT/ESTOP is ignored; use long press to recover.
 - Long press while running still triggers USER_ESTOP.
 - Long press in FAULT/ESTOP clears fault and resets odometry/map.
+- Exit detection is manual by PC13 short press; this is not autonomous goal
+  recognition.
 
 Safety behavior:
 

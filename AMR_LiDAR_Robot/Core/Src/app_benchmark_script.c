@@ -328,6 +328,17 @@ uint8_t AppBenchmarkScript_IsActive(void)
     return AppBenchmarkScript_IsActiveState(script_state) ? 1U : 0U;
 }
 
+uint8_t AppBenchmarkScript_IsAutoActive(void)
+{
+    return AppBenchmarkScript_IsAutoState(script_state) ? 1U : 0U;
+}
+
+uint8_t AppBenchmarkScript_IsReturnActive(void)
+{
+    return (AppBenchmarkScript_IsActiveState(script_state) &&
+            (script_current == &return_script)) ? 1U : 0U;
+}
+
 BenchmarkScriptState_t AppBenchmarkScript_GetState(void)
 {
     return script_state;

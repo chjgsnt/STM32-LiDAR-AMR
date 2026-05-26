@@ -270,10 +270,14 @@ Experimental benchmark script mode:
 
 - On the `exp/benchmark-script` branch, PC13 short press is also mapped to the
   experimental script controller:
-  - short press in IDLE alternates `script_exit` and `script_return`,
-  - short press while a script or `script_auto` is running stops it and safe-stops,
+  - short press in IDLE starts `script_auto` reactive exploration,
+  - short press while `script_auto` is running treats the current position as
+    Exit, stops auto, and starts `script_return`,
+  - short press while `script_return` is running stops return and safe-stops,
   - short press in non-IDLE non-script states requests stop,
   - short press in FAULT/ESTOP is ignored; long press is required to clear fault.
+- Exit detection in this benchmark flow is manual by PC13 short press; it is
+  not autonomous goal recognition.
 - PC13 long press behavior is unchanged:
   - running state: USER_ESTOP,
   - FAULT/ESTOP state: clear fault and reset odometry/map.

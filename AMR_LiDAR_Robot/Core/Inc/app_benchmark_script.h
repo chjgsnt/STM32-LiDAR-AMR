@@ -39,6 +39,8 @@ void AppBenchmarkScript_Reset(void);
 void AppBenchmarkScript_Update(void);
 void AppBenchmarkScript_PrintStatus(void);
 uint8_t AppBenchmarkScript_IsActive(void);
+uint8_t AppBenchmarkScript_IsAutoActive(void);
+uint8_t AppBenchmarkScript_IsReturnActive(void);
 BenchmarkScriptState_t AppBenchmarkScript_GetState(void);
 const char *AppBenchmarkScript_StateName(BenchmarkScriptState_t state);
 const char *AppBenchmarkScript_ActionName(ScriptAction action);
