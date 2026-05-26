@@ -64,6 +64,8 @@ static uint32_t script_step_start_ms = 0U;
 static uint32_t script_wait_start_ms = 0U;
 static uint32_t script_last_log_ms = 0U;
 static uint8_t script_initialized = 0U;
+static uint8_t script_step_active = 0U;
+static uint8_t script_step_just_started = 0U;
 
 static void AppBenchmarkScript_Start(const BenchmarkScriptDef_t *script);
 static void AppBenchmarkScript_StartStep(uint32_t now_ms);
@@ -88,6 +90,8 @@ void AppBenchmarkScript_Init(void)
     script_step_start_ms = 0U;
     script_wait_start_ms = 0U;
     script_last_log_ms = 0U;
+    script_step_active = 0U;
+    script_step_just_started = 0U;
     script_initialized = 1U;
     APP_LOG("SCRIPT: init obstacle_stop=%umm obstacle_clear=%umm lidar_stale=%ums",
             (unsigned int)SCRIPT_OBSTACLE_STOP_MM,
@@ -116,6 +120,8 @@ void AppBenchmarkScript_Stop(const char *reason)
     {
         Chassis_Stop();
         script_state = SCRIPT_ABORTED;
+        script_step_active = 0U;
+        script_step_just_started = 0U;
         APP_LOG("SCRIPT: stopped reason=%s", (reason != NULL) ? reason : "unspecified");
     }
 }
@@ -129,6 +135,8 @@ void AppBenchmarkScript_Reset(void)
     script_step_start_ms = 0U;
     script_wait_start_ms = 0U;
     script_last_log_ms = 0U;
+    script_step_active = 0U;
+    script_step_just_started = 0U;
     script_initialized = 1U;
     APP_LOG("SCRIPT: reset");
 }
@@ -167,7 +175,14 @@ void AppBenchmarkScript_Update(void)
     {
         script_state = SCRIPT_DONE;
         Chassis_Stop();
+        script_step_active = 0U;
+        script_step_just_started = 0U;
         APP_LOG("SCRIPT: done %s", (script_current != NULL) ? script_current->name : "none");
+        return;
+    }
+
+    if (script_step_active == 0U)
+    {
         return;
     }
 
@@ -180,6 +195,12 @@ void AppBenchmarkScript_Update(void)
         }
     }
 
+    if (script_step_just_started != 0U)
+    {
+        script_step_just_started = 0U;
+        return;
+    }
+
     if (AppBenchmarkScript_ElapsedMs(now_ms, script_step_start_ms) >= step->duration_ms)
     {
         AppBenchmarkScript_FinishStep(now_ms);
@@ -190,7 +211,7 @@ void AppBenchmarkScript_PrintStatus(void)
 {
     const BenchmarkScriptStep_t *step = AppBenchmarkScript_CurrentStep();
     uint32_t now_ms = HAL_GetTick();
-    uint32_t elapsed_ms = (script_step_start_ms != 0U) ? AppBenchmarkScript_ElapsedMs(now_ms, script_step_start_ms) : 0U;
+    uint32_t elapsed_ms = (script_step_active != 0U) ? AppBenchmarkScript_ElapsedMs(now_ms, script_step_start_ms) : 0U;
     uint32_t remaining_ms = 0U;
 
     if (step != NULL)
@@ -289,25 +310,33 @@ static void AppBenchmarkScript_Start(const BenchmarkScriptDef_t *script)
     script_current = script;
     script_step_index = 0U;
     script_state = SCRIPT_RUNNING;
+    script_step_start_ms = 0U;
     script_wait_start_ms = 0U;
     script_last_log_ms = 0U;
+    script_step_active = 0U;
+    script_step_just_started = 0U;
     APP_LOG("SCRIPT: start %s count=%u", script->name, (unsigned int)script->count);
-    AppBenchmarkScript_StartStep(HAL_GetTick());
+    AppBenchmarkScript_StartStep(0U);
 }
 
 static void AppBenchmarkScript_StartStep(uint32_t now_ms)
 {
     const BenchmarkScriptStep_t *step = AppBenchmarkScript_CurrentStep();
+    uint32_t start_ms = (now_ms != 0U) ? now_ms : HAL_GetTick();
 
     if (step == NULL)
     {
         script_state = SCRIPT_DONE;
         Chassis_Stop();
+        script_step_active = 0U;
+        script_step_just_started = 0U;
         APP_LOG("SCRIPT: done %s", (script_current != NULL) ? script_current->name : "none");
         return;
     }
 
-    script_step_start_ms = now_ms;
+    script_step_start_ms = start_ms;
+    script_step_active = 1U;
+    script_step_just_started = 1U;
     APP_LOG("SCRIPT: step=%u/%u action=%s duty=%d dur=%lums note=%s",
             (unsigned int)(script_step_index + 1U),
             (unsigned int)((script_current != NULL) ? script_current->count : 0U),
@@ -317,9 +346,11 @@ static void AppBenchmarkScript_StartStep(uint32_t now_ms)
             (step->note != NULL) ? step->note : "");
     if (step->action == SCRIPT_ACT_FORWARD)
     {
-        AppBenchmarkScript_CheckForwardSafety(now_ms);
+        AppBenchmarkScript_CheckForwardSafety(start_ms);
         if (script_state != SCRIPT_RUNNING)
         {
+            script_step_active = 0U;
+            script_step_just_started = 0U;
             return;
         }
     }
@@ -368,12 +399,19 @@ static void AppBenchmarkScript_FinishStep(uint32_t now_ms)
 {
     uint32_t elapsed_ms = AppBenchmarkScript_ElapsedMs(now_ms, script_step_start_ms);
 
+    if ((script_step_active == 0U) || (script_current == NULL) || (script_step_index >= script_current->count))
+    {
+        return;
+    }
+
     APP_LOG("SCRIPT: step=%u/%u done elapsed=%lums",
             (unsigned int)(script_step_index + 1U),
             (unsigned int)((script_current != NULL) ? script_current->count : 0U),
             (unsigned long)elapsed_ms);
 
     script_step_index++;
+    script_step_active = 0U;
+    script_step_just_started = 0U;
     if ((script_current == NULL) || (script_step_index >= script_current->count))
     {
         script_state = SCRIPT_DONE;
@@ -393,6 +431,8 @@ static void AppBenchmarkScript_ResumeCurrentStep(uint32_t now_ms)
     {
         script_state = SCRIPT_DONE;
         Chassis_Stop();
+        script_step_active = 0U;
+        script_step_just_started = 0U;
         APP_LOG("SCRIPT: done %s", (script_current != NULL) ? script_current->name : "none");
         return;
     }
@@ -410,6 +450,8 @@ static void AppBenchmarkScript_Abort(BenchmarkScriptState_t state, const char *r
 {
     Chassis_Stop();
     script_state = state;
+    script_step_active = 0U;
+    script_step_just_started = 0U;
     APP_LOG("SCRIPT: abort state=%s reason=%s",
             AppBenchmarkScript_StateName(state),
             (reason != NULL) ? reason : "unspecified");
@@ -422,6 +464,8 @@ static void AppBenchmarkScript_CheckForwardSafety(uint32_t now_ms)
         Chassis_Stop();
         script_state = SCRIPT_WAIT_OBSTACLE_CLEAR;
         script_wait_start_ms = now_ms;
+        script_step_active = 0U;
+        script_step_just_started = 0U;
         APP_LOG("SCRIPT: wait reason=lidar_invalid_or_stale");
         return;
     }
@@ -432,6 +476,8 @@ static void AppBenchmarkScript_CheckForwardSafety(uint32_t now_ms)
         Chassis_Stop();
         script_state = SCRIPT_WAIT_OBSTACLE_CLEAR;
         script_wait_start_ms = now_ms;
+        script_step_active = 0U;
+        script_step_just_started = 0U;
         APP_LOG("SCRIPT: wait reason=front_blocked front=%u stop=%u",
                 (unsigned int)((lidar != NULL) ? lidar->front_min_mm : 0U),
                 (unsigned int)SCRIPT_OBSTACLE_STOP_MM);
