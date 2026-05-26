@@ -98,7 +98,11 @@ typedef void (*App_ChassisCommand_t)(int16_t duty);
 #endif
 
 #define IMU_SAMPLE_PERIOD_MS 10U
+#if (APP_DEBUG_VERBOSE || APP_DEBUG_IMU_VERBOSE)
 #define APP_IMU_LOG_INTERVAL_MS 1000U
+#else
+#define APP_IMU_LOG_INTERVAL_MS 5000U
+#endif
 #define MOTOR_TEST_DUTY 300
 #define MOTOR_TEST_PRE_PHASE_STOP_MS 1000U
 #define MOTOR_TEST_INITIAL_STOP_MS 2000U

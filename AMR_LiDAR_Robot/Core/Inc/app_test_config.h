@@ -70,6 +70,34 @@
 #define APP_MODE_USES_LIDAR_BRINGUP            (APP_MODE_IS_LIDAR_OBSTACLE || APP_MODE_IS_IMU_HEADING_ASSIST_DRY_RUN || APP_MODE_IS_LIDAR_OBSTACLE_AVOIDANCE)
 
 /*
+ * Demo logging controls.
+ *
+ * Defaults keep serial output focused on operator-visible events:
+ * state changes, button/command actions, path/return steps, safety faults,
+ * and low-rate safety heartbeat. Set APP_DEBUG_VERBOSE to 1 to restore most
+ * periodic diagnostics, or enable one subsystem macro below.
+ */
+#ifndef APP_DEBUG_VERBOSE
+#define APP_DEBUG_VERBOSE 0
+#endif
+
+#ifndef APP_DEBUG_LIDAR_VERBOSE
+#define APP_DEBUG_LIDAR_VERBOSE 0
+#endif
+
+#ifndef APP_DEBUG_MOTOR_VERBOSE
+#define APP_DEBUG_MOTOR_VERBOSE 0
+#endif
+
+#ifndef APP_DEBUG_ODOM_VERBOSE
+#define APP_DEBUG_ODOM_VERBOSE 0
+#endif
+
+#ifndef APP_DEBUG_IMU_VERBOSE
+#define APP_DEBUG_IMU_VERBOSE 0
+#endif
+
+/*
  * Derived mode flags. Do not edit these directly.
  */
 #define APP_LIDAR_OBSTACLE_DRY_RUN_ENABLE     APP_MODE_IS_LIDAR_OBSTACLE_DRY_RUN

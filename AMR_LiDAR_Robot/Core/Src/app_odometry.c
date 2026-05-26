@@ -40,25 +40,30 @@
 #define ODOM_RIGHT_TICK_SIGN CHASSIS_RIGHT_SIGN
 #endif
 
-#define ODOM_LOG_INTERVAL_MS 200U
+#define ODOM_LOG_INTERVAL_MS 1000U
 #define ODOM_PI 3.14159265358979323846f
+#define ODOM_VERBOSE_LOGS (APP_DEBUG_VERBOSE || APP_DEBUG_ODOM_VERBOSE)
 
 static OdomPose_t odom_pose = {0.0f, 0.0f, 0.0f};
 static OdomSample_t odom_last_sample = {0};
 static int32_t odom_prev_left = 0;
 static int32_t odom_prev_right = 0;
+#if ODOM_VERBOSE_LOGS
 static float odom_log_delta_left_m = 0.0f;
 static float odom_log_delta_right_m = 0.0f;
 static uint32_t odom_last_log_ms = 0U;
+#endif
 static uint8_t odom_initialized = 0U;
 
 static float Odom_TicksToMeters(int32_t ticks);
 static float Odom_NormalizeAngle(float angle_rad);
 static int32_t Odom_ScaleFloatRounded(float value, float multiplier);
-static const char *Odom_FixedSign(int32_t value);
 static uint32_t Odom_FixedWhole(int32_t value, int32_t decimal_scale);
+#if ODOM_VERBOSE_LOGS
+static const char *Odom_FixedSign(int32_t value);
 static uint32_t Odom_FixedFraction(int32_t value, int32_t decimal_scale);
 static void Odom_Log(uint32_t now_ms);
+#endif
 
 void Odom_Init(void)
 {
@@ -74,9 +79,11 @@ void Odom_Init(void)
     odom_last_sample.delta_left_m = 0.0f;
     odom_last_sample.delta_right_m = 0.0f;
     odom_last_sample.last_update_ms = HAL_GetTick();
+#if ODOM_VERBOSE_LOGS
     odom_log_delta_left_m = 0.0f;
     odom_log_delta_right_m = 0.0f;
     odom_last_log_ms = odom_last_sample.last_update_ms;
+#endif
     odom_initialized = 1U;
 
     APP_LOG("[ODOM] init wheel_diam_mm=%lu wheel_base_mm=%lu ticks_per_rev=%lu left_sign=%d right_sign=%d",
@@ -134,9 +141,9 @@ void Odom_Update(void)
     odom_last_sample.delta_right_m = dr;
     odom_last_sample.last_update_ms = now_ms;
 
+#if ODOM_VERBOSE_LOGS
     odom_log_delta_left_m += dl;
     odom_log_delta_right_m += dr;
-
     if ((now_ms - odom_last_log_ms) >= ODOM_LOG_INTERVAL_MS)
     {
         Odom_Log(now_ms);
@@ -144,6 +151,7 @@ void Odom_Update(void)
         odom_log_delta_left_m = 0.0f;
         odom_log_delta_right_m = 0.0f;
     }
+#endif
 }
 
 void Odom_Reset(void)
@@ -153,8 +161,10 @@ void Odom_Reset(void)
     odom_pose.x_m = 0.0f;
     odom_pose.y_m = 0.0f;
     odom_pose.theta_rad = 0.0f;
+#if ODOM_VERBOSE_LOGS
     odom_log_delta_left_m = 0.0f;
     odom_log_delta_right_m = 0.0f;
+#endif
     odom_last_sample.raw_left_delta = 0;
     odom_last_sample.raw_right_delta = 0;
     odom_last_sample.signed_left_delta = 0;
@@ -162,7 +172,9 @@ void Odom_Reset(void)
     odom_last_sample.delta_left_m = 0.0f;
     odom_last_sample.delta_right_m = 0.0f;
     odom_last_sample.last_update_ms = HAL_GetTick();
+#if ODOM_VERBOSE_LOGS
     odom_last_log_ms = odom_last_sample.last_update_ms;
+#endif
     odom_initialized = 1U;
 
     APP_LOG("[ODOM] reset");
@@ -224,16 +236,17 @@ static int32_t Odom_ScaleFloatRounded(float value, float multiplier)
     return (int32_t)(scaled + 0.5f);
 }
 
-static const char *Odom_FixedSign(int32_t value)
-{
-    return (value < 0) ? "-" : "";
-}
-
 static uint32_t Odom_FixedWhole(int32_t value, int32_t decimal_scale)
 {
     int32_t abs_value = (value < 0) ? -value : value;
 
     return (uint32_t)(abs_value / decimal_scale);
+}
+
+#if ODOM_VERBOSE_LOGS
+static const char *Odom_FixedSign(int32_t value)
+{
+    return (value < 0) ? "-" : "";
 }
 
 static uint32_t Odom_FixedFraction(int32_t value, int32_t decimal_scale)
@@ -270,3 +283,4 @@ static void Odom_Log(uint32_t now_ms)
             (unsigned long)Odom_FixedWhole(dr_mm, 1000),
             (unsigned long)Odom_FixedFraction(dr_mm, 1000));
 }
+#endif

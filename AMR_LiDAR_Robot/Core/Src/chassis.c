@@ -7,6 +7,7 @@
 #include "stm32f4xx_hal.h"
 
 #define CHASSIS_STOP_LOG_INTERVAL_MS 500U
+#define CHASSIS_VERBOSE_LOGS (APP_DEBUG_VERBOSE || APP_DEBUG_MOTOR_VERBOSE)
 
 static int16_t Chassis_ClampDuty(int16_t duty);
 static int16_t Chassis_ApplySign(int16_t duty, int16_t sign);
@@ -109,6 +110,7 @@ static void Chassis_RecordCommand(int16_t left_duty, int16_t right_duty)
 
 static void Chassis_LogStopExecuted(void)
 {
+#if CHASSIS_VERBOSE_LOGS
     static uint32_t last_log_ms = 0U;
     static uint8_t has_logged = 0U;
     uint32_t now_ms = HAL_GetTick();
@@ -119,4 +121,5 @@ static void Chassis_LogStopExecuted(void)
         has_logged = 1U;
         APP_LOG("CHASSIS: stop executed=1");
     }
+#endif
 }

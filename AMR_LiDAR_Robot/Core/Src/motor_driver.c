@@ -13,6 +13,7 @@
 #define MOTOR_DRIVER_ADC1_CHANNEL (2U)
 #define MOTOR_DRIVER_STOP_LOG_INTERVAL_MS 500U
 #define MOTOR_DRIVER_DUTY_LOG_INTERVAL_MS 500U
+#define MOTOR_DRIVER_VERBOSE_LOGS (APP_DEBUG_VERBOSE || APP_DEBUG_MOTOR_VERBOSE)
 
 static int16_t MotorDriver_ClampDuty(int16_t duty);
 static uint32_t MotorDriver_DutyToCompare(int16_t duty);
@@ -190,6 +191,7 @@ static void MotorDriver_InitAdc1In2Placeholder(void)
 
 static void MotorDriver_LogStopAllExecuted(void)
 {
+#if MOTOR_DRIVER_VERBOSE_LOGS
     static uint32_t last_log_ms = 0U;
     static uint8_t has_logged = 0U;
     uint32_t now_ms = HAL_GetTick();
@@ -204,10 +206,12 @@ static void MotorDriver_LogStopAllExecuted(void)
                 (unsigned long)__HAL_TIM_GET_COMPARE(&htim3, TIM_CHANNEL_3),
                 (unsigned long)__HAL_TIM_GET_COMPARE(&htim3, TIM_CHANNEL_4));
     }
+#endif
 }
 
 static void MotorDriver_LogFinalDuty(char motor_name, int16_t duty)
 {
+#if MOTOR_DRIVER_VERBOSE_LOGS
     static uint32_t last_log_a_ms = 0U;
     static uint32_t last_log_b_ms = 0U;
     static uint8_t has_logged_a = 0U;
@@ -222,4 +226,8 @@ static void MotorDriver_LogFinalDuty(char motor_name, int16_t duty)
         *has_logged = 1U;
         APP_LOG("MOTOR: set%c final_duty=%d", motor_name, (int)duty);
     }
+#else
+    (void)motor_name;
+    (void)duty;
+#endif
 }

@@ -77,6 +77,7 @@ APP LIDAR_OBS: state=RECOVER
 ## Documentation
 
 See [Docs/Final_Report.md](Docs/Final_Report.md) for the full project report.
+See [Docs/Demo_Guide.md](Docs/Demo_Guide.md) for the final offline demo procedure.
 
 The final report records:
 
@@ -87,6 +88,16 @@ The final report records:
 - current parameters,
 - known limitations,
 - future improvement ideas.
+
+## Current Demo Features
+
+- LiDAR obstacle avoidance
+- AMR state machine
+- OLED status UI
+- USER BUTTON offline control
+- Serial telemetry and commands
+- Safety fault handling
+- Minimal recorded-action return-to-start
 
 ## Known Limitations
 

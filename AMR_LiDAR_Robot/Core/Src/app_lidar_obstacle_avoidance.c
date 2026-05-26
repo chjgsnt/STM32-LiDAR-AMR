@@ -24,6 +24,7 @@
 #define LIDAR_OBS_FORWARD_RIGHT_DUTY 500
 #define LIDAR_OBS_TURN_DUTY 360
 #define LIDAR_OBS_BACKUP_DUTY 320
+#define LIDAR_OBS_VERBOSE_LOGS (APP_DEBUG_VERBOSE || APP_DEBUG_LIDAR_VERBOSE)
 
 typedef enum
 {
@@ -432,6 +433,7 @@ static LidarObsFront App_LidarObstacleAvoidance_ReadFront(uint32_t now_ms)
 static void App_LidarObstacleAvoidance_LogFront(const LidarObsFront *front,
                                                 uint32_t now_ms)
 {
+#if LIDAR_OBS_VERBOSE_LOGS
     if ((front == NULL) ||
         (App_LidarObstacleAvoidance_ElapsedMs(now_ms, lidar_obs_last_log_ms) < LIDAR_OBS_LOG_INTERVAL_MS))
     {
@@ -446,6 +448,10 @@ static void App_LidarObstacleAvoidance_LogFront(const LidarObsFront *front,
                 (unsigned int)front->front_min_mm,
                 (unsigned long)front->valid_points);
     }
+#else
+    (void)front;
+    (void)now_ms;
+#endif
 }
 
 static void App_LidarObstacleAvoidance_ApplyStop(void)

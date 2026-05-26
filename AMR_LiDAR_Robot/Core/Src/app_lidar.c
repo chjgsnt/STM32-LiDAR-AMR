@@ -35,6 +35,8 @@
 #define APP_LIDAR_RIGHT_MIN_TENTH_DEG 2450U
 #define APP_LIDAR_RIGHT_MAX_TENTH_DEG 3050U
 
+#define APP_LIDAR_VERBOSE_LOGS (APP_DEBUG_VERBOSE || APP_DEBUG_LIDAR_VERBOSE)
+
 #define APP_LIDAR_DESCRIPTOR_SEARCH_A5 0U
 #define APP_LIDAR_DESCRIPTOR_SEARCH_5A 1U
 #define APP_LIDAR_DESCRIPTOR_COLLECT 2U
@@ -106,8 +108,10 @@ static void App_Lidar_ShiftNodeBuffer(void);
 static void App_Lidar_CopySnapshot(App_Lidar_Snapshot_t *snapshot);
 static void App_Lidar_UpdatePublishedStatus(const App_Lidar_Snapshot_t *snapshot);
 static void App_Lidar_MarkDescriptorPrinted(void);
+#if APP_LIDAR_VERBOSE_LOGS
 static void App_Lidar_FormatBytes(const uint8_t *bytes, uint8_t count, char *text, uint32_t text_size);
 static uint32_t App_Lidar_ElapsedMs(uint32_t now_ms, uint32_t then_ms);
+#endif
 
 static uint8_t app_lidar_rx_byte;
 static volatile uint32_t app_lidar_rx_bytes;
@@ -251,6 +255,7 @@ void App_Lidar_Task(void)
     }
 
     App_Lidar_Snapshot_t snapshot;
+#if APP_LIDAR_VERBOSE_LOGS
     char sample_text[APP_LIDAR_SAMPLE_TEXT_SIZE];
     char descriptor_text[APP_LIDAR_DESCRIPTOR_TEXT_SIZE];
     char type_text[8];
@@ -263,6 +268,7 @@ void App_Lidar_Task(void)
     char angle_text[16];
     uint32_t rx_age_ms;
     uint32_t valid_age_ms;
+#endif
 
     App_Lidar_CopySnapshot(&snapshot);
     App_Lidar_UpdatePublishedStatus(&snapshot);
@@ -275,6 +281,7 @@ void App_Lidar_Task(void)
 
     last_log_ms = now_ms;
 
+#if APP_LIDAR_VERBOSE_LOGS
     App_Lidar_FormatBytes(snapshot.sample,
                           snapshot.sample_count,
                           sample_text,
@@ -407,6 +414,17 @@ void App_Lidar_Task(void)
             (unsigned long)snapshot.zero_quality,
             angle_text,
             sample_text);
+#else
+    if (snapshot.descriptor_pending != 0U)
+    {
+        if (snapshot.descriptor_data_type == 0x81U)
+        {
+            APP_LOG("APP LiDAR: scan response type 0x81 detected");
+        }
+
+        App_Lidar_MarkDescriptorPrinted();
+    }
+#endif
 }
 
 void App_Lidar_RxCpltCallback(UART_HandleTypeDef *huart)
@@ -519,6 +537,7 @@ static void App_Lidar_LogRxDebug(void)
         __enable_irq();
     }
 
+#if APP_LIDAR_VERBOSE_LOGS
     if (callback_entered_log != 0U)
     {
         APP_LOG("[LIDAR_RX] callback entered");
@@ -533,6 +552,11 @@ static void App_Lidar_LogRxDebug(void)
     {
         APP_LOG("[LIDAR_RX] rx_count=%lu", (unsigned long)count_log);
     }
+#else
+    (void)callback_entered_log;
+    (void)first_log;
+    (void)count_log;
+#endif
 
     if (error_count_log != 0U)
     {
@@ -994,6 +1018,7 @@ static void App_Lidar_MarkDescriptorPrinted(void)
     }
 }
 
+#if APP_LIDAR_VERBOSE_LOGS
 static void App_Lidar_FormatBytes(const uint8_t *bytes, uint8_t count, char *text, uint32_t text_size)
 {
     static const char hex[] = "0123456789ABCDEF";
@@ -1052,3 +1077,4 @@ static uint32_t App_Lidar_ElapsedMs(uint32_t now_ms, uint32_t then_ms)
 
     return 0U;
 }
+#endif
