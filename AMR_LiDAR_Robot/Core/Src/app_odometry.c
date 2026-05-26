@@ -42,7 +42,7 @@ static uint32_t odom_last_log_ms = 0U;
 #endif
 static uint32_t odom_last_warn_ms = 0U;
 static uint8_t odom_initialized = 0U;
-static uint8_t odom_freeze = 0U;
+static uint8_t odom_freeze = (APP_ODO_FREEZE_DEFAULT != 0U) ? 1U : 0U;
 
 static void Odom_ClearDebugTotals(void);
 static int32_t Odom_LeftDelta(int32_t current, int32_t previous);
@@ -98,7 +98,7 @@ void Odom_Init(void)
     odom_initialized = 1U;
     Odom_ClearDebugTotals();
 
-    APP_LOG("ODO: init radius_mm=%lu wheel_base_mm=%lu ticks_per_rev=%lu gear_x100=%lu left_sign=%d right_sign=%d max_step_mm=%lu max_dth_mrad=%lu dt_ms=%u..%u",
+    APP_LOG("ODO: init radius_mm=%lu wheel_base_mm=%lu ticks_per_rev=%lu gear_x100=%lu left_sign=%d right_sign=%d max_step_mm=%lu max_dth_mrad=%lu dt_ms=%u..%u freeze=%u",
             (unsigned long)Odom_FixedWhole(Odom_ScaleFloatRounded(ODO_WHEEL_RADIUS_M, 1000.0f), 1),
             (unsigned long)Odom_FixedWhole(Odom_ScaleFloatRounded(ODO_WHEEL_BASE_M, 1000.0f), 1),
             (unsigned long)Odom_FixedWhole(Odom_ScaleFloatRounded(ODO_ENCODER_TICKS_PER_REV, 1.0f), 1),
@@ -108,7 +108,8 @@ void Odom_Init(void)
             (unsigned long)Odom_FixedWhole(Odom_ScaleFloatRounded(APP_ODO_MAX_LINEAR_STEP_M, 1000.0f), 1),
             (unsigned long)Odom_FixedWhole(Odom_ScaleFloatRounded(APP_ODO_MAX_ANGULAR_STEP_RAD, 1000.0f), 1),
             (unsigned int)APP_ODO_MIN_DT_MS,
-            (unsigned int)APP_ODO_MAX_DT_MS);
+            (unsigned int)APP_ODO_MAX_DT_MS,
+            (unsigned int)odom_freeze);
 }
 
 void Odom_Update(void)

@@ -51,6 +51,10 @@
 #define APP_ODO_AUTO_PRINT_ENABLE 0
 #endif
 
+#ifndef APP_ODO_FREEZE_DEFAULT
+#define APP_ODO_FREEZE_DEFAULT 1U
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif

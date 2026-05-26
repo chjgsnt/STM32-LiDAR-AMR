@@ -129,6 +129,10 @@ encoder diagnostics while preventing pose integration and map updates. This
 allows LiDAR, motor, and ESTOP tests to run without incorrect odometry polluting
 the map. Ground calibration should verify encoder direction and tick-to-distance
 before using map/explorer behavior.
+Final demo keeps odometry integration frozen by default to prioritise reliable
+LiDAR obstacle avoidance and safety demonstration. Encoder/odometry calibration
+remains available through `enc_dbg` and `odo_freeze` commands, and `odo_freeze 0`
+can temporarily enable pose integration for experiments.
 Encoder diagnostic showed left forward tick sign should be positive, so odometry
 uses `ODOM_LEFT_TICK_SIGN=+1` and `ODOM_RIGHT_TICK_SIGN=+1`.
 Wheel one-revolution calibration measured left approximately 1738 ticks and
