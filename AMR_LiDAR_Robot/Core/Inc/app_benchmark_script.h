@@ -1,0 +1,45 @@
+#ifndef APP_BENCHMARK_SCRIPT_H
+#define APP_BENCHMARK_SCRIPT_H
+
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+typedef enum
+{
+    SCRIPT_IDLE = 0,
+    SCRIPT_RUNNING,
+    SCRIPT_WAIT_OBSTACLE_CLEAR,
+    SCRIPT_DONE,
+    SCRIPT_ABORTED,
+    SCRIPT_FAULT
+} BenchmarkScriptState_t;
+
+typedef enum
+{
+    SCRIPT_ACT_STOP = 0,
+    SCRIPT_ACT_WAIT,
+    SCRIPT_ACT_FORWARD,
+    SCRIPT_ACT_BACKUP,
+    SCRIPT_ACT_TURN_LEFT,
+    SCRIPT_ACT_TURN_RIGHT
+} ScriptAction;
+
+void AppBenchmarkScript_Init(void);
+void AppBenchmarkScript_StartExit(void);
+void AppBenchmarkScript_StartReturn(void);
+void AppBenchmarkScript_Stop(const char *reason);
+void AppBenchmarkScript_Reset(void);
+void AppBenchmarkScript_Update(void);
+void AppBenchmarkScript_PrintStatus(void);
+BenchmarkScriptState_t AppBenchmarkScript_GetState(void);
+const char *AppBenchmarkScript_StateName(BenchmarkScriptState_t state);
+const char *AppBenchmarkScript_ActionName(ScriptAction action);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* APP_BENCHMARK_SCRIPT_H */

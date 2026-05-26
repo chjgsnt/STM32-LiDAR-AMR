@@ -1,6 +1,7 @@
 #include "app_serial_command.h"
 
 #include "amr_system.h"
+#include "app_benchmark_script.h"
 #include "app_explorer.h"
 #include "app_fault.h"
 #include "app_lidar.h"
@@ -88,6 +89,7 @@ void App_SerialCommand_Init(void)
     if ((rx_status == HAL_OK) || (rx_status == HAL_BUSY))
     {
         APP_LOG("[CMD] ready uart=huart2 commands=start stop explore return estop reset_fault odo_reset odom_reset enc_dbg odom_dbg odo_freeze map_reset motor_test status map grid exp ui page tel");
+        APP_LOG("[CMD] script commands=script_exit script_return script_stop script_status script_reset");
         APP_LOG("[CMD] use newline: start<Enter> or no-newline command timeout=%u ms",
                 (unsigned int)APP_CMD_NO_NEWLINE_TIMEOUT_MS);
     }
@@ -312,6 +314,7 @@ static void App_SerialCommand_HandleLine(const char *line)
     }
     else if (strcmp(line, "stop") == 0)
     {
+        AppBenchmarkScript_Stop("serial_stop");
         AppExplorer_Stop();
         if (AMR_GetState() == AMR_STATE_RETURN)
         {
@@ -335,6 +338,7 @@ static void App_SerialCommand_HandleLine(const char *line)
     }
     else if (strcmp(line, "estop") == 0)
     {
+        AppBenchmarkScript_Stop("serial_estop");
         AppExplorer_Stop();
         ReturnExecutor_Stop("serial_estop");
         AMR_RequestEStop("serial_estop");
@@ -342,6 +346,7 @@ static void App_SerialCommand_HandleLine(const char *line)
     }
     else if (strcmp(line, "reset_fault") == 0)
     {
+        AppBenchmarkScript_Reset();
         App_Safety_ClearFault();
         AppExplorer_Reset();
         AMR_RequestResetFault("serial_reset_fault");
@@ -356,6 +361,26 @@ static void App_SerialCommand_HandleLine(const char *line)
     else if ((strcmp(line, "odom_dbg") == 0) || (strcmp(line, "enc_dbg") == 0))
     {
         AppOdo_PrintDebug();
+    }
+    else if (strcmp(line, "script_exit") == 0)
+    {
+        AppBenchmarkScript_StartExit();
+    }
+    else if (strcmp(line, "script_return") == 0)
+    {
+        AppBenchmarkScript_StartReturn();
+    }
+    else if (strcmp(line, "script_stop") == 0)
+    {
+        AppBenchmarkScript_Stop("serial_script_stop");
+    }
+    else if (strcmp(line, "script_status") == 0)
+    {
+        AppBenchmarkScript_PrintStatus();
+    }
+    else if (strcmp(line, "script_reset") == 0)
+    {
+        AppBenchmarkScript_Reset();
     }
     else if (App_SerialCommand_ParseOdoFreezeCommand(line, &freeze) != 0U)
     {
@@ -428,6 +453,11 @@ static uint8_t App_SerialCommand_IsKnownCommand(const char *line)
             (strcmp(line, "odo_reset") == 0) ||
             (strcmp(line, "odom_dbg") == 0) ||
             (strcmp(line, "enc_dbg") == 0) ||
+            (strcmp(line, "script_exit") == 0) ||
+            (strcmp(line, "script_return") == 0) ||
+            (strcmp(line, "script_stop") == 0) ||
+            (strcmp(line, "script_status") == 0) ||
+            (strcmp(line, "script_reset") == 0) ||
             (strcmp(line, "map_reset") == 0) ||
             (App_SerialCommand_ParseOdoFreezeCommand(line, NULL) != 0U) ||
             (App_SerialCommand_ParseMotorTestCommand(line, NULL, NULL, NULL) != 0U) ||

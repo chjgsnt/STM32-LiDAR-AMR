@@ -54,6 +54,18 @@ UI fallback commands:
 - `ui`: print current serial UI status.
 - `page 0`, `page 1`, `page 2`: switch serial UI page state.
 
+Experimental benchmark script commands:
+
+- `script_exit`: start a short time-based Start-to-Exit script.
+- `script_return`: start a short time-based Exit-to-Start script.
+- `script_stop`: stop the script and safe stop.
+- `script_status`: print script state, step index, action, elapsed, and remaining time.
+- `script_reset`: reset script state.
+
+The benchmark script mode is experimental and time-based. It is provided to help
+tune a fixed 5x5 maze run, but it is not claimed as full autonomous SLAM,
+mapping, or Start-to-Exit-to-Return navigation.
+
 ## 3. Pre-Demo Checklist
 
 1. Build and flash the final `Debug` firmware.
@@ -161,7 +173,37 @@ If encoder/odometry values look unreasonable:
 - Encoder calibration is available and one-revolution tick calibration has been performed, but live pose navigation is not used for final demo decisions.
 - OLED output is disabled because of pin/resource constraints; serial telemetry is the UI evidence path.
 - The 5x5 map and explorer modules are software frameworks/skeletons for future work.
+- `script_exit` and `script_return` are experimental time-based benchmark helpers and must not be presented as full autonomous navigation.
 - The final demo does not perform full SLAM, ICP, A*, DWA, or full autonomous Start-to-Exit-to-Return benchmark navigation.
 - Return-to-start/path features are prototype support logic and should not be presented as a completed benchmark return solution.
 - Obstacle avoidance performance depends on floor friction, wheel slip, obstacle placement, and LiDAR visibility.
 
+## 8. Experimental Benchmark Script Mode
+
+The experimental script mode is intended for controlled 5x5 maze tuning on the
+`exp/benchmark-script` branch. It does not replace the stable `start` obstacle
+avoidance command.
+
+Default `script_exit` steps:
+
+1. `FORWARD`, duty `450`, duration `900 ms`.
+2. `TURN_RIGHT`, duty `330`, duration `650 ms`.
+3. `FORWARD`, duty `450`, duration `900 ms`.
+4. `STOP`, duration `200 ms`.
+
+Default `script_return` steps:
+
+1. `TURN_RIGHT`, duty `330`, duration `1300 ms`.
+2. `FORWARD`, duty `450`, duration `900 ms`.
+3. `TURN_LEFT`, duty `330`, duration `650 ms`.
+4. `FORWARD`, duty `450`, duration `900 ms`.
+5. `STOP`, duration `200 ms`.
+
+Safety behavior:
+
+- Scripts only start from `AMR_STATE_IDLE` with no active fault.
+- Forward steps stop and wait if LiDAR front distance is below `250 mm`.
+- Waiting steps resume by advancing to the next script step after the front
+  distance is above `450 mm`.
+- Fault, ESTOP, or `script_stop` stops the script immediately.
+- Use `script_status` to inspect state and timing.

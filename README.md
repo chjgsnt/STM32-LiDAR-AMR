@@ -118,6 +118,10 @@ Diagnostics/framework commands:
 | `odo_freeze 0` | Temporarily enable odometry integration for experiments |
 | `map` / `grid` | Print software map view |
 | `exp` | Print explorer framework status |
+| `script_exit` | Start experimental time-based Start-to-Exit script |
+| `script_return` | Start experimental time-based Exit-to-Start script |
+| `script_stop` | Stop experimental benchmark script and safe stop |
+| `script_status` | Print experimental script state |
 
 Typical demo flow:
 
@@ -149,10 +153,11 @@ PC13 user button:
   `APP_ODO_FREEZE_DEFAULT=1`.
 - The map/explorer modules are software framework/skeleton components, not
   verified live navigation.
+- Experimental `script_exit` / `script_return` commands are time-based benchmark
+  helpers and are not full autonomous navigation.
 - OLED hardware display is disabled by default due to pin/resource constraints.
 - Bluetooth is not implemented.
 - The software ESTOP path is implemented, but it is not a hardware latched
   power cut.
 - Full scan matching, ICP, A*, DWA, and robust global maze navigation remain
   future work.
-

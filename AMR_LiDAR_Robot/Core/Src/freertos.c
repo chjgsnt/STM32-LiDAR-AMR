@@ -26,6 +26,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "amr_system.h"
+#include "app_benchmark_script.h"
 #include "app_button_control.h"
 #include "app_explorer.h"
 #include "app_fault.h"
@@ -572,6 +573,7 @@ void StartTask05(void *argument)
   Odom_Init();
   AppMap_Init();
   AppExplorer_Init();
+  AppBenchmarkScript_Init();
   ReturnPath_Init();
   AppFault_Init();
   App_Safety_Init();
@@ -586,6 +588,7 @@ void StartTask05(void *argument)
     AppMap_UpdateFromPoseAndLidar();
     AppExplorer_Update();
     App_Safety_Update();
+    AppBenchmarkScript_Update();
     amr_state = AMR_GetState();
 
     if ((amr_state == AMR_STATE_EXPLORE) || (amr_state == AMR_STATE_AVOID))

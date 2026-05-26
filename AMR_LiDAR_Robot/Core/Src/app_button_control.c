@@ -1,6 +1,7 @@
 #include "app_button_control.h"
 
 #include "amr_system.h"
+#include "app_benchmark_script.h"
 #include "app_explorer.h"
 #include "app_fault.h"
 #include "app_map.h"
@@ -185,6 +186,7 @@ static void App_ButtonControl_HandleLongPress(void)
         (state == AMR_STATE_ESTOP))
     {
         APP_LOG("[BTN] action=clear_fault_reset_odom");
+        AppBenchmarkScript_Reset();
         App_Safety_ClearFault();
         AppExplorer_Reset();
         Odom_Reset();
@@ -194,6 +196,7 @@ static void App_ButtonControl_HandleLongPress(void)
     }
 
     APP_LOG("[BTN] action=estop");
+    AppBenchmarkScript_Stop("button_estop");
     AppExplorer_Stop();
     ReturnExecutor_Stop("button_estop");
     Chassis_Stop();

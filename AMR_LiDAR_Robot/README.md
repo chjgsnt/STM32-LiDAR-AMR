@@ -147,6 +147,11 @@ Diagnostics and framework commands:
 | `return` | Start return/path framework state |
 | `ui` | Print serial UI status |
 | `page 0/1/2` | Switch serial UI page state |
+| `script_exit` | Start experimental time-based Start-to-Exit script |
+| `script_return` | Start experimental time-based Exit-to-Start script |
+| `script_stop` | Stop experimental benchmark script and safe stop |
+| `script_status` | Print experimental script state and current step |
+| `script_reset` | Reset experimental script state |
 
 ## 7. Demo Procedure
 
@@ -206,6 +211,8 @@ FAULT: safe stop
 
 - Final demo is reactive LiDAR obstacle avoidance, not full autonomous maze
   solving.
+- Experimental `script_exit` / `script_return` commands are time-based benchmark
+  helpers only; they are not full SLAM, mapping, or autonomous navigation.
 - Live odometry integration is frozen by default:
   `APP_ODO_FREEZE_DEFAULT=1`.
 - `status` and `tel` should show `odo_frozen=1` in the final demo.
@@ -256,3 +263,20 @@ Safety:
 - PC13 long press triggers USER_ESTOP.
 - PC13 long press in FAULT/ESTOP clears fault and resets odometry/map.
 
+Experimental benchmark script mode:
+
+- `script_exit` default steps:
+  - forward duty 450 for 900 ms,
+  - turn right duty 330 for 650 ms,
+  - forward duty 450 for 900 ms,
+  - stop for 200 ms.
+- `script_return` default steps:
+  - turn right duty 330 for 1300 ms,
+  - forward duty 450 for 900 ms,
+  - turn left duty 330 for 650 ms,
+  - forward duty 450 for 900 ms,
+  - stop for 200 ms.
+- The scripts are experimental and time-based. Tune duty and duration in
+  `Core/Src/app_benchmark_script.c` for a specific 5x5 maze layout.
+- Forward script steps stop and wait if LiDAR front distance is below the script
+  obstacle threshold. Fault or USER_ESTOP aborts the script immediately.
