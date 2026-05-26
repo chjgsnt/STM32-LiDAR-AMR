@@ -127,6 +127,9 @@ the map. Ground calibration should verify encoder direction and tick-to-distance
 before using map/explorer behavior.
 Encoder diagnostic showed left forward tick sign should be positive, so odometry
 uses `ODOM_LEFT_TICK_SIGN=+1` and `ODOM_RIGHT_TICK_SIGN=+1`.
+Wheel one-revolution calibration measured left approximately 1738 ticks and
+right approximately 1650 ticks, so odometry now uses the average
+`ODO_ENCODER_TICKS_PER_REV=1694` with `ODO_GEAR_RATIO=1.0`.
 
 Lifted-wheel tests can exaggerate odometry because the wheels can free-spin
 without ground traction. Final benchmark validation should be performed on the

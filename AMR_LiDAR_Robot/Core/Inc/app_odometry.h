@@ -20,7 +20,7 @@
 #endif
 
 #ifndef ODO_ENCODER_TICKS_PER_REV
-#define ODO_ENCODER_TICKS_PER_REV 390.0f
+#define ODO_ENCODER_TICKS_PER_REV 1694.0f
 #endif
 
 #ifndef ODO_GEAR_RATIO
