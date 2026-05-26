@@ -30,6 +30,12 @@
 
 #define APP_BUTTON_ACTIVE_LEVEL GPIO_PIN_RESET
 
+typedef enum
+{
+    APP_BUTTON_SCRIPT_EXIT = 0,
+    APP_BUTTON_SCRIPT_RETURN
+} AppButtonNextScript_t;
+
 static uint8_t app_button_initialized = 0U;
 static uint8_t app_button_ready = 0U;
 static uint8_t app_button_last_raw_active = 0U;
@@ -37,6 +43,7 @@ static uint8_t app_button_stable_active = 0U;
 static uint8_t app_button_long_reported = 0U;
 static uint32_t app_button_raw_changed_ms = 0U;
 static uint32_t app_button_press_start_ms = 0U;
+static AppButtonNextScript_t app_button_next_script = APP_BUTTON_SCRIPT_EXIT;
 
 static uint8_t App_ButtonControl_ReadActive(void);
 static void App_ButtonControl_HandleShortPress(void);
@@ -53,6 +60,7 @@ void App_ButtonControl_Init(void)
     app_button_long_reported = 0U;
     app_button_raw_changed_ms = now_ms;
     app_button_press_start_ms = active ? now_ms : 0U;
+    app_button_next_script = APP_BUTTON_SCRIPT_EXIT;
     app_button_initialized = 1U;
     app_button_ready = 1U;
 
@@ -131,49 +139,46 @@ static void App_ButtonControl_HandleShortPress(void)
 {
     AMR_State_t state = AMR_GetState();
 
-    switch (state)
+    if (AppFault_IsActive() || (state == AMR_STATE_FAULT) || (state == AMR_STATE_ESTOP))
     {
-        case AMR_STATE_IDLE:
-            APP_LOG("[BTN] action=start");
-            AMR_RequestStart("button_start");
-            AppExplorer_StartExplore();
-            break;
+        APP_LOG("[BTN] short ignored reason=fault_active");
+        return;
+    }
 
-        case AMR_STATE_EXPLORE:
-        case AMR_STATE_AVOID:
-            APP_LOG("[BTN] action=return");
-            AppExplorer_StartReturn();
-            AMR_RequestReturn("button_return");
-            if (AMR_GetState() == AMR_STATE_RETURN)
-            {
-                ReturnExecutor_Start();
-            }
-            break;
+    if (AppBenchmarkScript_IsActive() != 0U)
+    {
+        APP_LOG("[BTN] short action=script_stop");
+        AppBenchmarkScript_Stop("button_script_stop");
+        Chassis_Stop();
+        return;
+    }
 
-        case AMR_STATE_RETURN:
-            APP_LOG("[BTN] action=stop");
-            AppExplorer_Stop();
-            ReturnExecutor_Stop("button_stop");
-            (void)AMR_SetState(AMR_STATE_IDLE, "button_stop");
-            Chassis_Stop();
-            break;
+    if (state != AMR_STATE_IDLE)
+    {
+        APP_LOG("[BTN] short action=stop_non_idle");
+        AppBenchmarkScript_Stop("button_stop_non_idle");
+        AppExplorer_Stop();
+        if (state == AMR_STATE_RETURN)
+        {
+            ReturnExecutor_Stop("button_stop_non_idle");
+        }
+        AMR_RequestStop("button_stop_non_idle");
+        AppOdo_SyncBaseline();
+        Chassis_Stop();
+        return;
+    }
 
-        case AMR_STATE_FAULT:
-            APP_LOG("[BTN] action=reset_fault");
-            App_Safety_ClearFault();
-            AppExplorer_Reset();
-            AMR_RequestResetFault("button_reset_fault");
-            break;
-
-        case AMR_STATE_ESTOP:
-            APP_LOG("[BTN] action=reset_estop");
-            App_Safety_ClearFault();
-            AppExplorer_Reset();
-            AMR_RequestResetFault("button_reset_estop");
-            break;
-
-        default:
-            break;
+    if (app_button_next_script == APP_BUTTON_SCRIPT_EXIT)
+    {
+        APP_LOG("[BTN] short action=script_exit");
+        AppBenchmarkScript_StartExit();
+        app_button_next_script = APP_BUTTON_SCRIPT_RETURN;
+    }
+    else
+    {
+        APP_LOG("[BTN] short action=script_return");
+        AppBenchmarkScript_StartReturn();
+        app_button_next_script = APP_BUTTON_SCRIPT_EXIT;
     }
 }
 
@@ -187,6 +192,7 @@ static void App_ButtonControl_HandleLongPress(void)
     {
         APP_LOG("[BTN] action=clear_fault_reset_odom");
         AppBenchmarkScript_Reset();
+        app_button_next_script = APP_BUTTON_SCRIPT_EXIT;
         App_Safety_ClearFault();
         AppExplorer_Reset();
         Odom_Reset();

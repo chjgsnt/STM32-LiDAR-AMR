@@ -265,15 +265,24 @@ Safety:
 
 Experimental benchmark script mode:
 
+- On the `exp/benchmark-script` branch, PC13 short press is also mapped to the
+  experimental script controller:
+  - short press in IDLE alternates `script_exit` and `script_return`,
+  - short press while a script is running stops the script and safe-stops,
+  - short press in non-IDLE non-script states requests stop,
+  - short press in FAULT/ESTOP is ignored; long press is required to clear fault.
+- PC13 long press behavior is unchanged:
+  - running state: USER_ESTOP,
+  - FAULT/ESTOP state: clear fault and reset odometry/map.
 - `script_exit` default steps:
   - forward duty 520 for 900 ms,
-  - turn right duty 420 for 650 ms,
+  - turn right duty 420 for 800 ms,
   - forward duty 520 for 900 ms,
   - stop for 200 ms.
 - `script_return` default steps:
-  - turn right duty 420 for 1300 ms,
+  - turn right duty 420 for 1600 ms,
   - forward duty 520 for 900 ms,
-  - turn left duty 420 for 650 ms,
+  - turn left duty 420 for 800 ms,
   - forward duty 520 for 900 ms,
   - stop for 200 ms.
 - The scripts are experimental and time-based. Tune duty and duration in

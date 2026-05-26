@@ -187,17 +187,26 @@ avoidance command.
 Default `script_exit` steps:
 
 1. `FORWARD`, duty `520`, duration `900 ms`.
-2. `TURN_RIGHT`, duty `420`, duration `650 ms`.
+2. `TURN_RIGHT`, duty `420`, duration `800 ms`.
 3. `FORWARD`, duty `520`, duration `900 ms`.
 4. `STOP`, duration `200 ms`.
 
 Default `script_return` steps:
 
-1. `TURN_RIGHT`, duty `420`, duration `1300 ms`.
+1. `TURN_RIGHT`, duty `420`, duration `1600 ms`.
 2. `FORWARD`, duty `520`, duration `900 ms`.
-3. `TURN_LEFT`, duty `420`, duration `650 ms`.
+3. `TURN_LEFT`, duty `420`, duration `800 ms`.
 4. `FORWARD`, duty `520`, duration `900 ms`.
 5. `STOP`, duration `200 ms`.
+
+PC13 button behavior on the `exp/benchmark-script` branch:
+
+- Short press in IDLE alternates `script_exit` and `script_return`.
+- Short press while a script is running stops the script and safe-stops.
+- Short press in non-IDLE non-script states requests stop.
+- Short press in FAULT/ESTOP is ignored; use long press to recover.
+- Long press while running still triggers USER_ESTOP.
+- Long press in FAULT/ESTOP clears fault and resets odometry/map.
 
 Safety behavior:
 
