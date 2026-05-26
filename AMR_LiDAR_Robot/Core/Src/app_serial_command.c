@@ -3,6 +3,7 @@
 #include "amr_system.h"
 #include "app_lidar.h"
 #include "app_odometry.h"
+#include "app_button_control.h"
 #include "app_return_path.h"
 #include "app_safety.h"
 #include "bringup_log.h"
@@ -424,9 +425,10 @@ static void App_SerialCommand_LogStatus(void)
             App_SerialCommand_FixedSign(theta_tenth_deg),
             (unsigned long)App_SerialCommand_FixedWhole(theta_tenth_deg, 10),
             (unsigned long)App_SerialCommand_FixedFraction(theta_tenth_deg, 10));
-    APP_LOG("[STATUS] path count=%u return_state=%s",
+    APP_LOG("[STATUS] path count=%u return_state=%s button=%s",
             (unsigned int)path_count,
-            ReturnExecutor_StateName(return_state));
+            ReturnExecutor_StateName(return_state),
+            (App_ButtonControl_IsReady() != 0U) ? "ready" : "init");
 }
 
 static int32_t App_SerialCommand_ScaleFloatRounded(float value, float multiplier)

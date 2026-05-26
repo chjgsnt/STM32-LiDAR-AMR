@@ -49,6 +49,7 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user sources here
     Core/Src/amr_system.c
+    Core/Src/app_button_control.c
     Core/Src/app_encoder_bringup.c
     Core/Src/app_lidar.c
     Core/Src/app_lidar_obstacle_avoidance.c

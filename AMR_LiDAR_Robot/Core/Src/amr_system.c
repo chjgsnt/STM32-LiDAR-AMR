@@ -8,20 +8,27 @@
 #include "main.h"
 #include "motor_driver.h"
 
+#define AMR_ENABLE_LEGACY_START_BUTTON 0
+#if AMR_ENABLE_LEGACY_START_BUTTON
 #define AMR_START_BUTTON_DEBOUNCE_MS 250U
+#endif
 #define AMR_AVOID_ENTER_FRONT_MM 400U
 #define AMR_AVOID_EXIT_FRONT_MM 520U
 
 static volatile AMR_State_t amr_state = AMR_STATE_IDLE;
 static uint32_t amr_state_enter_ms = 0U;
 static uint8_t amr_initialized = 0U;
+#if AMR_ENABLE_LEGACY_START_BUTTON
 static uint8_t amr_last_start_button_active = 0U;
 static uint32_t amr_last_start_button_ms = 0U;
+#endif
 
 static void AMR_EnsureInitialized(void);
 static void AMR_ApplySafeStop(void);
 static uint8_t AMR_IsMotionState(AMR_State_t state);
+#if AMR_ENABLE_LEGACY_START_BUTTON
 static void AMR_UpdateStartButton(uint32_t now_ms);
+#endif
 static void AMR_UpdateObstacleState(void);
 
 void AMR_Init(void)
@@ -29,23 +36,28 @@ void AMR_Init(void)
     amr_state = AMR_STATE_IDLE;
     amr_state_enter_ms = HAL_GetTick();
     amr_initialized = 1U;
+#if AMR_ENABLE_LEGACY_START_BUTTON
     amr_last_start_button_active = 0U;
     amr_last_start_button_ms = 0U;
+#endif
 
     /*
-     * The NUCLEO B1 user button is used as a simple demo start button.
-     * Dedicated return and emergency-stop buttons are TODO hardware inputs;
-     * serial commands provide those triggers for this build.
+     * app_button_control.c owns the NUCLEO B1 user button for short-press
+     * start/return/stop/reset and long-press ESTOP demo control.
      */
     APP_LOG("[AMR] state IDLE reason=boot");
 }
 
 void AMR_StateMachine_Update(void)
 {
+#if AMR_ENABLE_LEGACY_START_BUTTON
     uint32_t now_ms = HAL_GetTick();
+#endif
 
     AMR_EnsureInitialized();
+#if AMR_ENABLE_LEGACY_START_BUTTON
     AMR_UpdateStartButton(now_ms);
+#endif
     AMR_UpdateObstacleState();
 }
 
@@ -242,6 +254,7 @@ static uint8_t AMR_IsMotionState(AMR_State_t state)
     return ((state == AMR_STATE_EXPLORE) || (state == AMR_STATE_AVOID)) ? 1U : 0U;
 }
 
+#if AMR_ENABLE_LEGACY_START_BUTTON
 static void AMR_UpdateStartButton(uint32_t now_ms)
 {
     uint8_t active = (HAL_GPIO_ReadPin(B1_GPIO_Port, B1_Pin) == GPIO_PIN_RESET) ? 1U : 0U;
@@ -256,6 +269,7 @@ static void AMR_UpdateStartButton(uint32_t now_ms)
 
     amr_last_start_button_active = active;
 }
+#endif
 
 static void AMR_UpdateObstacleState(void)
 {

@@ -26,6 +26,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "amr_system.h"
+#include "app_button_control.h"
 #include "app_odometry.h"
 #include "app_safety.h"
 #include "app_serial_command.h"
@@ -564,11 +565,13 @@ void StartTask05(void *argument)
   Odom_Init();
   ReturnPath_Init();
   App_Safety_Init();
+  App_ButtonControl_Init();
   for(;;)
   {
     AMR_State_t amr_state;
 
     AMR_StateMachine_Update();
+    App_ButtonControl_Update();
     Odom_Update();
     App_Safety_Update();
     amr_state = AMR_GetState();
