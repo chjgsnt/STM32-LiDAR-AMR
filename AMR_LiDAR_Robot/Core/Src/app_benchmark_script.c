@@ -69,6 +69,7 @@ static void AppBenchmarkScript_Start(const BenchmarkScriptDef_t *script);
 static void AppBenchmarkScript_StartStep(uint32_t now_ms);
 static void AppBenchmarkScript_ApplyAction(const BenchmarkScriptStep_t *step);
 static void AppBenchmarkScript_FinishStep(uint32_t now_ms);
+static void AppBenchmarkScript_ResumeCurrentStep(uint32_t now_ms);
 static void AppBenchmarkScript_Abort(BenchmarkScriptState_t state, const char *reason);
 static void AppBenchmarkScript_CheckForwardSafety(uint32_t now_ms);
 static void AppBenchmarkScript_UpdateWaitObstacleClear(uint32_t now_ms);
@@ -365,7 +366,13 @@ static void AppBenchmarkScript_ApplyAction(const BenchmarkScriptStep_t *step)
 
 static void AppBenchmarkScript_FinishStep(uint32_t now_ms)
 {
-    APP_LOG("SCRIPT: step done");
+    uint32_t elapsed_ms = AppBenchmarkScript_ElapsedMs(now_ms, script_step_start_ms);
+
+    APP_LOG("SCRIPT: step=%u/%u done elapsed=%lums",
+            (unsigned int)(script_step_index + 1U),
+            (unsigned int)((script_current != NULL) ? script_current->count : 0U),
+            (unsigned long)elapsed_ms);
+
     script_step_index++;
     if ((script_current == NULL) || (script_step_index >= script_current->count))
     {
@@ -375,6 +382,27 @@ static void AppBenchmarkScript_FinishStep(uint32_t now_ms)
         return;
     }
 
+    AppBenchmarkScript_StartStep(now_ms);
+}
+
+static void AppBenchmarkScript_ResumeCurrentStep(uint32_t now_ms)
+{
+    const BenchmarkScriptStep_t *step = AppBenchmarkScript_CurrentStep();
+
+    if (step == NULL)
+    {
+        script_state = SCRIPT_DONE;
+        Chassis_Stop();
+        APP_LOG("SCRIPT: done %s", (script_current != NULL) ? script_current->name : "none");
+        return;
+    }
+
+    script_state = SCRIPT_RUNNING;
+    script_wait_start_ms = 0U;
+    APP_LOG("SCRIPT: obstacle_clear resume step=%u/%u action=%s",
+            (unsigned int)(script_step_index + 1U),
+            (unsigned int)((script_current != NULL) ? script_current->count : 0U),
+            AppBenchmarkScript_ActionName(step->action));
     AppBenchmarkScript_StartStep(now_ms);
 }
 
@@ -414,8 +442,7 @@ static void AppBenchmarkScript_UpdateWaitObstacleClear(uint32_t now_ms)
 {
     if (AppBenchmarkScript_LidarFrontClear(now_ms))
     {
-        APP_LOG("SCRIPT: obstacle_clear advance_next");
-        AppBenchmarkScript_FinishStep(now_ms);
+        AppBenchmarkScript_ResumeCurrentStep(now_ms);
         return;
     }
 
@@ -434,11 +461,6 @@ static const BenchmarkScriptStep_t *AppBenchmarkScript_CurrentStep(void)
 
 static uint32_t AppBenchmarkScript_ElapsedMs(uint32_t now_ms, uint32_t then_ms)
 {
-    if (then_ms == 0U)
-    {
-        return 0U;
-    }
-
     if (now_ms >= then_ms)
     {
         return now_ms - then_ms;
