@@ -279,9 +279,10 @@ void AppTelemetry_Print(void)
     y_cm = App_UI_ScaleFloatRounded(pose.y_m, 100.0f);
     th_mrad = App_UI_ScaleFloatRounded(pose.theta_rad, 1000.0f);
 
-    APP_LOG("TEL: mode=%s fault=%s x=%s%lu.%02lu y=%s%lu.%02lu th=%s%lu.%03lu cell=(%d,%d) exp=%s map_v=%u speed_lim=%u obs_th=%lu.%02lu wall_th=%lu.%02lu",
+    APP_LOG("TEL: mode=%s fault=%s odo_frozen=%u x=%s%lu.%02lu y=%s%lu.%02lu th=%s%lu.%03lu cell=(%d,%d) exp=%s map_v=%u speed_lim=%u obs_th=%lu.%02lu wall_th=%lu.%02lu",
             AMR_StateShortName(AMR_GetState()),
             App_UI_FaultName(),
+            (unsigned int)AppOdo_IsFrozen(),
             App_UI_FixedSign(x_cm),
             (unsigned long)App_UI_FixedWhole(x_cm, 100),
             (unsigned long)App_UI_FixedFraction(x_cm, 100),

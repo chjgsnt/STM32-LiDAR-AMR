@@ -101,7 +101,7 @@ void AppMap_UpdateFromPoseAndLidar(void)
     app_map_last_update_ms = now_ms;
 
     state = AMR_GetState();
-    if ((AppMap_StateAllowsUpdate(state) == 0U) || AppFault_IsActive())
+    if ((AppMap_StateAllowsUpdate(state) == 0U) || AppFault_IsActive() || (AppOdo_IsFrozen() != 0U))
     {
         return;
     }

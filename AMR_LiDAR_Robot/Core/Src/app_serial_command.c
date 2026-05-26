@@ -12,6 +12,7 @@
 #include "app_ui.h"
 #include "bringup_log.h"
 #include "chassis.h"
+#include "cmsis_os2.h"
 #include "usart.h"
 
 #include <stdint.h>
@@ -23,6 +24,8 @@
 #define APP_CMD_PENDING_QUEUE_SIZE 4U
 #define APP_CMD_NO_NEWLINE_TIMEOUT_MS 250U
 #define APP_CMD_STATUS_RATE_LIMIT_MS 500U
+#define APP_CMD_MOTOR_TEST_MAX_DUTY 350
+#define APP_CMD_MOTOR_TEST_MAX_MS 1500U
 #ifndef APP_CMD_RX_CHAR_DEBUG
 #define APP_CMD_RX_CHAR_DEBUG 0
 #endif
@@ -51,6 +54,12 @@ static void App_SerialCommand_ProcessPendingCommand(void);
 static void App_SerialCommand_HandleLine(const char *line);
 static uint8_t App_SerialCommand_IsKnownCommand(const char *line);
 static uint8_t App_SerialCommand_ParsePageCommand(const char *line, uint8_t *page);
+static uint8_t App_SerialCommand_ParseOdoFreezeCommand(const char *line, uint8_t *freeze);
+static uint8_t App_SerialCommand_ParseMotorTestCommand(const char *line,
+                                                       char *mode,
+                                                       int16_t *duty,
+                                                       uint32_t *duration_ms);
+static void App_SerialCommand_RunMotorTest(char mode, int16_t duty, uint32_t duration_ms);
 static char App_SerialCommand_ToLower(char ch);
 static void App_SerialCommand_LogRxChar(char ch);
 static void App_SerialCommand_LogStatus(void);
@@ -78,7 +87,7 @@ void App_SerialCommand_Init(void)
     rx_status = App_SerialCommand_StartRx();
     if ((rx_status == HAL_OK) || (rx_status == HAL_BUSY))
     {
-        APP_LOG("[CMD] ready uart=huart2 commands=start stop explore return estop reset_fault odom_reset odom_dbg map_reset status map grid exp ui page tel");
+        APP_LOG("[CMD] ready uart=huart2 commands=start stop explore return estop reset_fault odo_reset odom_reset enc_dbg odom_dbg odo_freeze map_reset motor_test status map grid exp ui page tel");
         APP_LOG("[CMD] use newline: start<Enter> or no-newline command timeout=%u ms",
                 (unsigned int)APP_CMD_NO_NEWLINE_TIMEOUT_MS);
     }
@@ -194,9 +203,11 @@ static void App_SerialCommand_ProcessChar(char ch)
     }
     else
     {
+        APP_LOG("[CMD] line too long len=%u max=%u",
+                (unsigned int)app_cmd_len,
+                (unsigned int)(APP_CMD_LINE_MAX - 1U));
         app_cmd_len = 0U;
         app_cmd_last_char_ms = 0U;
-        APP_LOG("[CMD] line too long, discarded");
     }
 }
 
@@ -220,23 +231,44 @@ static void App_SerialCommand_CheckNoNewlineCommand(uint32_t now_ms)
 
 static void App_SerialCommand_QueueLine(const char *line)
 {
+    const char *start;
+    size_t len;
+
     if ((line == NULL) || (line[0] == '\0'))
     {
         return;
     }
 
-    APP_LOG("[CMD_RX] line=%s", line);
-
-    if (app_cmd_pending_count >= APP_CMD_PENDING_QUEUE_SIZE)
+    start = line;
+    while (*start == ' ')
     {
-        APP_LOG("[CMD] command queue full, dropped=%s", line);
+        start++;
+    }
+
+    len = strlen(start);
+    while ((len > 0U) && (start[len - 1U] == ' '))
+    {
+        len--;
+    }
+
+    if (len == 0U)
+    {
         return;
     }
 
+    if (app_cmd_pending_count >= APP_CMD_PENDING_QUEUE_SIZE)
+    {
+        APP_LOG("[CMD] command queue full, dropped=%.*s", (int)len, start);
+        return;
+    }
+
+    APP_LOG("[CMD_RX] line=%.*s", (int)len, start);
+
     (void)snprintf(app_cmd_pending_lines[app_cmd_pending_head],
                    APP_CMD_LINE_MAX,
-                   "%s",
-                   line);
+                   "%.*s",
+                   (int)len,
+                   start);
     app_cmd_pending_head = (uint8_t)((app_cmd_pending_head + 1U) % APP_CMD_PENDING_QUEUE_SIZE);
     app_cmd_pending_count++;
 }
@@ -259,6 +291,10 @@ static void App_SerialCommand_ProcessPendingCommand(void)
 static void App_SerialCommand_HandleLine(const char *line)
 {
     uint8_t page = 0U;
+    uint8_t freeze = 0U;
+    char motor_mode = '\0';
+    int16_t motor_duty = 0;
+    uint32_t motor_duration_ms = 0U;
 
     if (line == NULL)
     {
@@ -308,18 +344,26 @@ static void App_SerialCommand_HandleLine(const char *line)
         AppExplorer_Reset();
         AMR_RequestResetFault("serial_reset_fault");
     }
-    else if (strcmp(line, "odom_reset") == 0)
+    else if ((strcmp(line, "odom_reset") == 0) || (strcmp(line, "odo_reset") == 0))
     {
         Odom_Reset();
         AppMap_Reset();
     }
-    else if (strcmp(line, "odom_dbg") == 0)
+    else if ((strcmp(line, "odom_dbg") == 0) || (strcmp(line, "enc_dbg") == 0))
     {
         AppOdo_PrintDebug();
+    }
+    else if (App_SerialCommand_ParseOdoFreezeCommand(line, &freeze) != 0U)
+    {
+        AppOdo_SetFreeze(freeze);
     }
     else if (strcmp(line, "map_reset") == 0)
     {
         AppMap_Reset();
+    }
+    else if (App_SerialCommand_ParseMotorTestCommand(line, &motor_mode, &motor_duty, &motor_duration_ms) != 0U)
+    {
+        App_SerialCommand_RunMotorTest(motor_mode, motor_duty, motor_duration_ms);
     }
     else if (strcmp(line, "status") == 0)
     {
@@ -377,8 +421,12 @@ static uint8_t App_SerialCommand_IsKnownCommand(const char *line)
             (strcmp(line, "estop") == 0) ||
             (strcmp(line, "reset_fault") == 0) ||
             (strcmp(line, "odom_reset") == 0) ||
+            (strcmp(line, "odo_reset") == 0) ||
             (strcmp(line, "odom_dbg") == 0) ||
+            (strcmp(line, "enc_dbg") == 0) ||
             (strcmp(line, "map_reset") == 0) ||
+            (App_SerialCommand_ParseOdoFreezeCommand(line, NULL) != 0U) ||
+            (App_SerialCommand_ParseMotorTestCommand(line, NULL, NULL, NULL) != 0U) ||
             (strcmp(line, "status") == 0) ||
             (strcmp(line, "map") == 0) ||
             (strcmp(line, "grid") == 0) ||
@@ -420,6 +468,150 @@ static uint8_t App_SerialCommand_ParsePageCommand(const char *line, uint8_t *pag
     }
 
     return 1U;
+}
+
+static uint8_t App_SerialCommand_ParseOdoFreezeCommand(const char *line, uint8_t *freeze)
+{
+    uint8_t parsed;
+
+    if (line == NULL)
+    {
+        return 0U;
+    }
+
+    if (strcmp(line, "odo_freeze 0") == 0)
+    {
+        parsed = 0U;
+    }
+    else if (strcmp(line, "odo_freeze 1") == 0)
+    {
+        parsed = 1U;
+    }
+    else
+    {
+        return 0U;
+    }
+
+    if (freeze != NULL)
+    {
+        *freeze = parsed;
+    }
+
+    return 1U;
+}
+
+static uint8_t App_SerialCommand_ParseMotorTestCommand(const char *line,
+                                                       char *mode,
+                                                       int16_t *duty,
+                                                       uint32_t *duration_ms)
+{
+    char parsed_mode;
+    int parsed_duty;
+    unsigned long parsed_duration_ms;
+
+    if (line == NULL)
+    {
+        return 0U;
+    }
+
+    if (sscanf(line, "motor_test %c %d %lu", &parsed_mode, &parsed_duty, &parsed_duration_ms) != 3)
+    {
+        return 0U;
+    }
+
+    if ((parsed_mode != 'l') && (parsed_mode != 'r') && (parsed_mode != 'f') && (parsed_mode != 'b'))
+    {
+        return 0U;
+    }
+
+    if (parsed_duty < 0)
+    {
+        parsed_duty = -parsed_duty;
+    }
+
+    if ((parsed_duty == 0) ||
+        (parsed_duty > APP_CMD_MOTOR_TEST_MAX_DUTY) ||
+        (parsed_duration_ms == 0UL) ||
+        (parsed_duration_ms > APP_CMD_MOTOR_TEST_MAX_MS))
+    {
+        return 0U;
+    }
+
+    if (mode != NULL)
+    {
+        *mode = parsed_mode;
+    }
+
+    if (duty != NULL)
+    {
+        *duty = (int16_t)parsed_duty;
+    }
+
+    if (duration_ms != NULL)
+    {
+        *duration_ms = (uint32_t)parsed_duration_ms;
+    }
+
+    return 1U;
+}
+
+static void App_SerialCommand_RunMotorTest(char mode, int16_t duty, uint32_t duration_ms)
+{
+    uint32_t start_ms;
+
+    if (AppFault_IsActive())
+    {
+        APP_LOG("[MOTOR_TEST] rejected fault=%s", AppFault_Name(AppFault_Get()));
+        return;
+    }
+
+    if (AMR_GetState() != AMR_STATE_IDLE)
+    {
+        APP_LOG("[MOTOR_TEST] rejected state=%s", AMR_StateName(AMR_GetState()));
+        return;
+    }
+
+    APP_LOG("[MOTOR_TEST] start mode=%c duty=%d duration=%lums", mode, (int)duty, (unsigned long)duration_ms);
+
+    switch (mode)
+    {
+        case 'l':
+            Chassis_SetRaw(duty, 0);
+            break;
+
+        case 'r':
+            Chassis_SetRaw(0, duty);
+            break;
+
+        case 'f':
+            Chassis_Forward(duty);
+            break;
+
+        case 'b':
+            Chassis_Backward(duty);
+            break;
+
+        default:
+            APP_LOG("[MOTOR_TEST] rejected mode=%c", mode);
+            return;
+    }
+
+    start_ms = HAL_GetTick();
+    while (App_SerialCommand_ElapsedMs(HAL_GetTick(), start_ms) < duration_ms)
+    {
+        if (AppFault_IsActive() || (AMR_GetState() != AMR_STATE_IDLE))
+        {
+            APP_LOG("[MOTOR_TEST] interrupted state=%s fault=%s",
+                    AMR_StateName(AMR_GetState()),
+                    AppFault_IsActive() ? AppFault_Name(AppFault_Get()) : "NONE");
+            break;
+        }
+
+        osDelay(20U);
+    }
+
+    Chassis_Stop();
+    APP_LOG("[MOTOR_TEST] done");
 }
 
 static char App_SerialCommand_ToLower(char ch)
@@ -478,6 +670,9 @@ static void App_SerialCommand_LogStatus(void)
     const char *fault_name;
     AppMapSummary_t map_summary = {0, 0, APP_MAP_DIR_EAST, 0U, 0U, 0U};
     AppExplorerStatus_t exp_status = {EXP_IDLE, 0, 0, 0, 0, APP_MAP_DIR_EAST, APP_MAP_DIR_EAST, 0U, 0U, 1U};
+    int32_t odom_ds_mm;
+    int32_t odom_dtheta_mrad;
+    int32_t odom_dt_ms;
 
     (void)App_Safety_GetStatus(&safety);
     (void)Odom_GetPose(&pose);
@@ -499,6 +694,9 @@ static void App_SerialCommand_LogStatus(void)
     x_mm = App_SerialCommand_ScaleFloatRounded(pose.x_m, 1000.0f);
     y_mm = App_SerialCommand_ScaleFloatRounded(pose.y_m, 1000.0f);
     theta_tenth_deg = App_SerialCommand_ScaleFloatRounded(pose.theta_rad * 57.2957795f, 10.0f);
+    odom_ds_mm = App_SerialCommand_ScaleFloatRounded(sample.delta_center_m, 1000.0f);
+    odom_dtheta_mrad = App_SerialCommand_ScaleFloatRounded(sample.delta_theta_rad, 1000.0f);
+    odom_dt_ms = App_SerialCommand_ScaleFloatRounded(sample.dt_s, 1000.0f);
 
     APP_LOG("[STATUS] state=%s fault=%s",
             AMR_StateName(state),
@@ -514,7 +712,15 @@ static void App_SerialCommand_LogStatus(void)
             (int)command.right_duty,
             (long)sample.raw_left_delta,
             (long)sample.raw_right_delta);
-    APP_LOG("[STATUS] pose x=%s%lu.%03lu y=%s%lu.%03lu th=%s%lu.%01lu",
+    APP_LOG("[STATUS] odom_dbg ds_mm=%s%lu dth_mrad=%s%lu dt_ms=%lu skipped=%u frozen=%u",
+            App_SerialCommand_FixedSign(odom_ds_mm),
+            (unsigned long)App_SerialCommand_FixedWhole(odom_ds_mm, 1),
+            App_SerialCommand_FixedSign(odom_dtheta_mrad),
+            (unsigned long)App_SerialCommand_FixedWhole(odom_dtheta_mrad, 1),
+            (unsigned long)App_SerialCommand_FixedWhole(odom_dt_ms, 1),
+            (unsigned int)sample.step_skipped,
+            (unsigned int)AppOdo_IsFrozen());
+    APP_LOG("[STATUS] pose x=%s%lu.%03lu y=%s%lu.%03lu th=%s%lu.%01lu odo_frozen=%u",
             App_SerialCommand_FixedSign(x_mm),
             (unsigned long)App_SerialCommand_FixedWhole(x_mm, 1000),
             (unsigned long)App_SerialCommand_FixedFraction(x_mm, 1000),
@@ -523,7 +729,8 @@ static void App_SerialCommand_LogStatus(void)
             (unsigned long)App_SerialCommand_FixedFraction(y_mm, 1000),
             App_SerialCommand_FixedSign(theta_tenth_deg),
             (unsigned long)App_SerialCommand_FixedWhole(theta_tenth_deg, 10),
-            (unsigned long)App_SerialCommand_FixedFraction(theta_tenth_deg, 10));
+            (unsigned long)App_SerialCommand_FixedFraction(theta_tenth_deg, 10),
+            (unsigned int)AppOdo_IsFrozen());
     APP_LOG("[STATUS] path count=%u return_state=%s button=%s",
             (unsigned int)path_count,
             ReturnExecutor_StateName(return_state),
@@ -543,7 +750,6 @@ static void App_SerialCommand_LogStatus(void)
             exp_status.target_cy,
             (unsigned int)exp_status.path_len,
             (exp_status.skeleton_only != 0U) ? "skeleton" : "drive");
-    AppOdo_PrintDebug();
 }
 
 static int32_t App_SerialCommand_ScaleFloatRounded(float value, float multiplier)

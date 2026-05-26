@@ -118,6 +118,14 @@ linear or angular encoder deltas are skipped before they can push the pose and
 cell map far outside the maze. The `odom_dbg` and `map_reset` serial commands
 help inspect encoder deltas and recover the 5x5 map during testing.
 
+Encoder/odometry diagnostic commands are provided for ground calibration:
+`enc_dbg` prints raw counts, signed deltas, wheel-distance estimates, computed
+velocity, and odometry calibration constants; `odo_freeze 1` keeps sampling
+encoder diagnostics while preventing pose integration and map updates. This
+allows LiDAR, motor, and ESTOP tests to run without incorrect odometry polluting
+the map. Ground calibration should verify encoder direction and tick-to-distance
+before using map/explorer behavior.
+
 Lifted-wheel tests can exaggerate odometry because the wheels can free-spin
 without ground traction. Final benchmark validation should be performed on the
 ground after encoder direction and wheel calibration checks.
