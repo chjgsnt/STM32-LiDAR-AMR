@@ -93,11 +93,26 @@ The final report records:
 
 - LiDAR obstacle avoidance
 - AMR state machine
+- Differential-drive odometry pose and velocity telemetry
 - OLED status UI
 - USER BUTTON offline control
 - Serial telemetry and commands
 - Safety fault handling
 - Minimal recorded-action return-to-start
+
+## Odometry And Fault Handling
+
+Odometry uses differential-drive kinematics from left/right encoder deltas to
+estimate `x`, `y`, `theta`, linear velocity, and angular velocity. Calibration
+constants are centralized in `Core/Inc/app_odometry.h`.
+
+`app_fault` provides a latched Fault Manager for safe-stop behavior. LiDAR RX
+timeout and encoder stall faults stop motor outputs and require an explicit
+button or serial reset before motion can resume.
+
+Scan matching, occupancy-grid mapping, and full planner recovery are not yet
+implemented. They are future extensions on top of the current odometry pose and
+LiDAR telemetry.
 
 ## Known Limitations
 

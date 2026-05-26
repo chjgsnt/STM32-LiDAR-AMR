@@ -1,6 +1,8 @@
 #include "app_button_control.h"
 
 #include "amr_system.h"
+#include "app_fault.h"
+#include "app_odometry.h"
 #include "app_return_path.h"
 #include "app_safety.h"
 #include "bringup_log.h"
@@ -169,10 +171,23 @@ static void App_ButtonControl_HandleShortPress(void)
 
 static void App_ButtonControl_HandleLongPress(void)
 {
+    AMR_State_t state = AMR_GetState();
+
+    if (AppFault_IsActive() ||
+        (state == AMR_STATE_FAULT) ||
+        (state == AMR_STATE_ESTOP))
+    {
+        APP_LOG("[BTN] action=clear_fault_reset_odom");
+        App_Safety_ClearFault();
+        Odom_Reset();
+        AMR_RequestResetFault("button_long_clear_fault");
+        return;
+    }
+
     APP_LOG("[BTN] action=estop");
     ReturnExecutor_Stop("button_estop");
     Chassis_Stop();
-    (void)AMR_SetState(AMR_STATE_ESTOP, "button_long_press");
+    AppFault_Set(FAULT_USER_ESTOP);
 }
 
 static uint32_t App_ButtonControl_ElapsedMs(uint32_t now_ms, uint32_t then_ms)

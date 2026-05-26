@@ -51,6 +51,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/amr_system.c
     Core/Src/app_button_control.c
     Core/Src/app_encoder_bringup.c
+    Core/Src/app_fault.c
     Core/Src/app_lidar.c
     Core/Src/app_lidar_obstacle_avoidance.c
     Core/Src/app_lidar_stop_check.c

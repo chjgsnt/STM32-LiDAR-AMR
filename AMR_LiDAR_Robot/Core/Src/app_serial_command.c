@@ -1,6 +1,7 @@
 #include "app_serial_command.h"
 
 #include "amr_system.h"
+#include "app_fault.h"
 #include "app_lidar.h"
 #include "app_odometry.h"
 #include "app_button_control.h"
@@ -383,6 +384,8 @@ static void App_SerialCommand_LogStatus(void)
     uint32_t lidar_valid_age_ms;
     uint16_t path_count;
     ReturnExecState_t return_state;
+    AppFaultCode fault_code;
+    const char *fault_name;
 
     (void)App_Safety_GetStatus(&safety);
     (void)Odom_GetPose(&pose);
@@ -396,6 +399,8 @@ static void App_SerialCommand_LogStatus(void)
     lidar_valid_age_ms = App_SerialCommand_ElapsedMs(now_ms, lidar_last_valid_update_ms);
     path_count = ReturnPath_Count();
     return_state = ReturnExecutor_GetState();
+    fault_code = AppFault_Get();
+    fault_name = AppFault_IsActive() ? AppFault_Name(fault_code) : App_Safety_FaultName(safety.fault_code);
 
     x_mm = App_SerialCommand_ScaleFloatRounded(pose.x_m, 1000.0f);
     y_mm = App_SerialCommand_ScaleFloatRounded(pose.y_m, 1000.0f);
@@ -403,7 +408,7 @@ static void App_SerialCommand_LogStatus(void)
 
     APP_LOG("[STATUS] state=%s fault=%s",
             AMR_StateName(state),
-            App_Safety_FaultName(safety.fault_code));
+            fault_name);
     APP_LOG("[STATUS] lidar ready=%u front=%u rx_age=%lu valid_age=%lu err=%lu",
             (unsigned int)((lidar != NULL) ? lidar->ready : 0U),
             (unsigned int)(((lidar != NULL) && (lidar->front_valid != 0U)) ? lidar->front_min_mm : 0U),

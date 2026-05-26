@@ -27,6 +27,7 @@
 /* USER CODE BEGIN Includes */
 #include "amr_system.h"
 #include "app_button_control.h"
+#include "app_fault.h"
 #include "app_odometry.h"
 #include "app_safety.h"
 #include "app_serial_command.h"
@@ -568,6 +569,7 @@ void StartTask05(void *argument)
   App_LidarObstacleAvoidance_Init();
   Odom_Init();
   ReturnPath_Init();
+  AppFault_Init();
   App_Safety_Init();
   App_ButtonControl_Init();
   for(;;)

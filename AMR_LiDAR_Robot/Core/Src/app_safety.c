@@ -1,6 +1,7 @@
 #include "app_safety.h"
 
 #include "amr_system.h"
+#include "app_fault.h"
 #include "app_lidar.h"
 #include "bringup_log.h"
 #include "chassis.h"
@@ -10,6 +11,7 @@
 #define APP_SAFETY_LIDAR_RX_TIMEOUT_MS 1500U
 #define APP_SAFETY_LIDAR_VALID_WARN_MS 2000U
 #define APP_SAFETY_LIDAR_WARN_INTERVAL_MS 1000U
+#define APP_SAFETY_MOTION_GRACE_MS 1000U
 #if APP_DEBUG_VERBOSE
 #define APP_SAFETY_HEARTBEAT_MS 1000U
 #else
@@ -47,7 +49,7 @@ static uint8_t App_Safety_StateNeedsMotionSafety(AMR_State_t state);
 static int32_t App_Safety_AbsI32(int32_t value);
 static int16_t App_Safety_AbsI16(int16_t value);
 static void App_Safety_EnterFault(AppFaultCode_t code, const char *reason);
-static void App_Safety_StopOutputs(void);
+static AppFaultCode App_Safety_ToFaultCode(AppFaultCode_t code);
 
 void App_Safety_Init(void)
 {
@@ -112,6 +114,7 @@ void App_Safety_ClearFault(void)
     app_safety_encoder_sample_valid = 1U;
     app_safety_time_skew_warned = 0U;
 
+    AppFault_Clear();
     APP_LOG("[SAFETY] fault cleared");
 }
 
@@ -236,6 +239,11 @@ static void App_Safety_CheckLidarTimeout(uint32_t now_ms, AMR_State_t state)
         return;
     }
 
+    if (App_Safety_ElapsedMs(now_ms, AMR_GetStateEnterMs()) < APP_SAFETY_MOTION_GRACE_MS)
+    {
+        return;
+    }
+
     lidar = App_Lidar_GetStatus();
     if (lidar == NULL)
     {
@@ -304,6 +312,12 @@ static void App_Safety_CheckEncoderStall(uint32_t now_ms,
     uint8_t encoder_still;
 
     if (App_Safety_StateNeedsMotionSafety(state) == 0U)
+    {
+        app_safety_stall_start_ms = 0U;
+        return;
+    }
+
+    if (App_Safety_ElapsedMs(now_ms, AMR_GetStateEnterMs()) < APP_SAFETY_MOTION_GRACE_MS)
     {
         app_safety_stall_start_ms = 0U;
         return;
@@ -379,14 +393,25 @@ static int16_t App_Safety_AbsI16(int16_t value)
 
 static void App_Safety_EnterFault(AppFaultCode_t code, const char *reason)
 {
+    (void)reason;
+
     app_safety_status.fault_code = code;
     app_safety_status.fault_time_ms = HAL_GetTick();
-    App_Safety_StopOutputs();
-    (void)AMR_SetState(AMR_STATE_FAULT, reason);
+    AppFault_Set(App_Safety_ToFaultCode(code));
 }
 
-static void App_Safety_StopOutputs(void)
+static AppFaultCode App_Safety_ToFaultCode(AppFaultCode_t code)
 {
-    Chassis_Stop();
-    MotorDriver_StopAll();
+    switch (code)
+    {
+        case APP_FAULT_LIDAR_TIMEOUT:
+            return FAULT_LIDAR_TIMEOUT;
+
+        case APP_FAULT_ENCODER_STALL:
+            return FAULT_ENCODER_STALL;
+
+        case APP_FAULT_NONE:
+        default:
+            return FAULT_NONE;
+    }
 }
