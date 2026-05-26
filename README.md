@@ -1,75 +1,158 @@
-# Fully Embedded 2D-LiDAR Autonomous Mobile Robot
+# AMR LiDAR Robot - EBU6475 Microprocessor Systems Design
 
-## Hardware Platform
+## 1. Project Summary
 
-- MCU board: STM32 NUCLEO-F446RE
-- Sensor target: RPLidar C1 2D LiDAR
-- IMU target: MPU6500
-- Display target: SSD1306 OLED
-- Actuation target: DC motors with encoders
+This repository contains an STM32 NUCLEO-F446RE + FreeRTOS 2D LiDAR AMR project
+for EBU6475 Microprocessor Systems Design.
 
-## Development Toolchain
+The main project folder is:
 
-- STM32CubeMX
-- VSCode with STM32CubeIDE extension
-- STM32CubeCLT
+```text
+AMR_LiDAR_Robot/
+```
 
-## Project Progress / Bring-Up Status
+The final stable demo prioritises reliable LiDAR obstacle avoidance, safe stop,
+and serial telemetry. It is a stable LiDAR obstacle avoidance and safety demo,
+not a full autonomous Start-to-Exit-to-Return benchmark solution.
 
-- Step 0 created the baseline project file structure for later firmware, documentation, tools, and tests.
-- Step 1 created the first STM32CubeMX configuration for core bring-up peripherals and middleware.
-- Step 2 verified the generated configuration on hardware with USART2 logging, FreeRTOS startup, I2C1 scanning, and basic I2C module bring-up.
-- MPU6500 IMU bring-up is verified on I2C1 at address `0x68`: `WHO_AM_I = 0x70`, raw accelerometer/gyroscope data, `g` / `dps` conversion, gyro bias calibration, pitch/roll, complementary-filter fused pitch/roll, and App-layer readout are working.
-- Step 3 verified the AT8236 motor driver path, Motor A/B PWM forward/reverse output, and TIM2/TIM4 encoder counting.
-- Step 4 Chassis Open-Loop Test is complete. The chassis open-loop path has been verified with `MPU6500 IMU ready=1`, AT8236 motor driver output, Motor A/B PWM forward/reverse, TIM2/TIM4 encoder counting, and chassis `Forward`, `Backward`, `TurnLeft`, and `TurnRight` actions.
-- Step 5 Encoder Speed Balance Test is complete. With `base_duty=500`, `CHASSIS_LEFT_TRIM=-10`, and `CHASSIS_RIGHT_TRIM=10`, P-only balance reduces left/right wheel speed difference. During the second half of forward motion, `err` can usually be reduced to about `+/-10 ticks/sample`. Backward motion can run, but `err` fluctuates slightly more and will be optimized in the later PID stage. `MPU6500 IMU ready=1` remained valid during the test.
-- Step 6 Wheel Speed PI Closed-Loop Test is complete. With `target_ticks_per_sample=800`, `feedforward_duty=500`, and duty limited to `300..600`, both Forward PI and Backward PI ran to completion. Startup duty briefly reached `600`, then stabilized around `470..500`; later encoder deltas were mostly `810..830 ticks/sample`, close to the `800` target. `MPU6500 IMU ready=1` remained valid, and I2C baseline stayed normal with `SCL=1`, `SDA=1`.
-- Step 7 Heading Hold Test has a saved baseline. It uses MPU6500 gyro-Z yaw integration above the Step6 wheel speed PI loop, with `yaw_error = current_yaw - target_yaw` and explicit left/right target correction. Current conservative parameters are `HEADING_K_FORWARD=2`, `HEADING_K_BACKWARD=2`, and correction limits of `50 ticks/sample` in both directions. Forward heading hold is clearly improved with final yaw around `7.1 deg`; backward can run but still has about `+7 deg` final error relative to its target. `MPU6500 IMU ready=1` remained valid and I2C stayed normal.
-- Step 8 Test Mode and Logging Cleanup is in progress. Test selection is centralized through `APP_ACTIVE_TEST` in `Core/Inc/app_config.h`, only one bring-up test is enabled by default, UART logs now use the `APP_LOG` / `LOG_INFO` path with a FreeRTOS log mutex, and I2C scan verbosity is controlled by `APP_I2C_SCAN_VERBOSE`.
-- Step 9 RPLIDAR C1 UART4 bring-up preparation is recorded. RPLIDAR C1 uses TTL UART on `UART4` at `460800` baud, `8N1`, with `PC10` as `UART4_TX` and `PC11` as `UART4_RX`. Hardware wiring is complete; the next step is raw UART reception code and rx byte-count verification.
-- Final chassis direction configuration: `CHASSIS_LEFT_SIGN = -1`, `CHASSIS_RIGHT_SIGN = 1`.
-- Current wheel speed PI test target: `800 ticks/sample`; feedforward duty: `500`; duty limit: `300..600`.
-- Current known issue: backward heading hold still needs tuning; LiDAR raw UART reception and navigation integration are not completed yet.
+## 2. Final Stable Demo Status
 
-## Planned Firmware Modules
+Final demo configuration:
 
-- LiDAR data reception and RPLidar C1 packet parsing
-- MPU6500 IMU interface
-- SSD1306 OLED display interface
-- Motor control
-- Encoder feedback
-- PID control
-- Occupancy grid mapping
-- Navigation and path planning
-- UART debug logging
-- FreeRTOS application tasks
-- Application configuration
+- Active mode: `LiDARObstacleAvoidance`
+- Main behavior: LiDAR-based obstacle avoidance with stop / backup / turn /
+  recover actions
+- UI evidence: serial telemetry through USART2
+- OLED hardware display: disabled by default due to pin/resource constraints
+- Bluetooth: not implemented
+- Odometry integration: frozen by default for final demo stability
+- Odometry macro: `APP_ODO_FREEZE_DEFAULT=1`
+- Telemetry/status should show: `odo_frozen=1`
+- Encoder diagnostics remain available through `enc_dbg`, `odom_dbg`, and
+  `odo_freeze`
 
-## Evidence Recording
+Encoder calibration result:
 
-Use the `Docs/` folders to keep project evidence organized:
+| Wheel test | Result |
+| --- | ---: |
+| Left wheel one revolution | approximately 1738 ticks |
+| Right wheel one revolution | approximately 1650 ticks |
+| Average calibration value | approximately 1694 ticks/rev |
+| Final odometry setting | `ODO_ENCODER_TICKS_PER_REV=1694` |
 
-- `Docs/01_Module_Test/`: module bring-up notes, including MPU6500 IMU validation and RPLIDAR C1 UART4 bring-up
-- `Docs/Progress_Report.md`: project bring-up progress report
-- `Docs/02_Debug_Logs/`: serial logs and runtime traces
-- `Docs/03_OLED_Photos/`: OLED display photos during tests
-- `Docs/04_Logic_Analyzer/`: UART, I2C, PWM, and encoder captures
-- `Docs/05_LiDAR_Raw_Data/`: raw LiDAR frames and parsing notes
-- `Docs/06_PID_Tuning/`: PID tuning tables and test observations
-- `Docs/07_Map_Output/`: occupancy grid snapshots and exported map data
-- `Docs/08_Benchmark/`: timing, CPU load, memory, and latency measurements
-- `Docs/09_Git_Records/`: milestone notes and change records
+The lightweight 5x5 map and exploration framework exist as software
+framework/skeleton components. They are not used as final live navigation, and
+the final demo does not claim full live Start-to-Exit-to-Return autonomous
+benchmark navigation.
 
-## Directory Overview
+## 3. Key Features
 
-- `Firmware/App/`: application-level entry points and FreeRTOS task placeholders
-- `Firmware/Drivers_User/`: user-maintained hardware driver modules
-- `Firmware/Middleware_User/`: user-maintained control, mapping, navigation, and utility modules
-- `Firmware/Config/`: application configuration headers
-- `Docs/`: design notes, test evidence, debug records, and experiment outputs
-- `Tools/`: host-side scripts and serial helper tools
-- `Tests/`: unit and hardware test placeholders
+Enabled in the final demo:
 
-## Next Step
+- LiDAR front-distance detection through UART4.
+- Obstacle avoidance: stop / backup / turn / recover.
+- AMR state machine with safe IDLE, EXPLORE/AVOID, FAULT, and ESTOP behavior.
+- Fault manager and safe stop.
+- Serial telemetry and command interface.
+- PC13 long-press USER_ESTOP.
+- PC13 long-press in FAULT/ESTOP clears fault and resets odometry/map.
+- Encoder diagnostic and calibration evidence through serial commands.
 
-Add raw UART4 reception code for RPLIDAR C1 and verify rx byte count at `460800` baud, while keeping backward heading correction / odometry-yaw fusion as the next control tuning item.
+Implemented as framework or diagnostics:
+
+- Differential-drive odometry module.
+- Encoder/odometry diagnostic framework.
+- 5x5 cell-level map module.
+- DFS/frontier-style exploration skeleton.
+- Serial UI fallback and telemetry pages.
+
+Not implemented or not enabled in the final demo:
+
+- Bluetooth telemetry/control.
+- OLED hardware display.
+- Full SLAM / ICP.
+- Full A* / DWA autonomous maze navigation.
+- Full live Start-to-Exit-to-Return benchmark autonomy.
+
+## 4. Repository Structure
+
+```text
+.
+├── AMR_LiDAR_Robot/              # Main STM32Cube/CMake firmware project
+│   ├── Core/                     # STM32 application, HAL glue, FreeRTOS tasks
+│   ├── Drivers/                  # STM32 HAL drivers
+│   ├── Middlewares/              # FreeRTOS and middleware
+│   ├── Docs/                     # Demo guide and final report
+│   └── README.md                 # Detailed project README
+├── Docs/                         # Earlier evidence/progress folders
+├── Firmware/                     # Early firmware planning/placeholders
+├── Tests/                        # Test placeholders
+├── Tools/                        # Host-side tools/placeholders
+└── README.md                     # GitHub repository landing page
+```
+
+Most current code and documentation live under `AMR_LiDAR_Robot/`.
+
+## 5. Quick Demo Commands
+
+Open the USART2 debug COM port at 115200 baud, 8N1.
+
+Core commands:
+
+| Command | Purpose |
+| --- | --- |
+| `status` | Print detailed system state |
+| `tel` | Print compact telemetry |
+| `start` | Start LiDAR obstacle avoidance |
+| `stop` | Stop and return to IDLE |
+| `estop` | Enter ESTOP and safe stop |
+| `reset_fault` | Clear FAULT/ESTOP when safe |
+
+Diagnostics/framework commands:
+
+| Command | Purpose |
+| --- | --- |
+| `enc_dbg` | Print encoder diagnostic/calibration data |
+| `odom_dbg` | Print odometry diagnostic data |
+| `odo_freeze 1` | Freeze odometry integration |
+| `odo_freeze 0` | Temporarily enable odometry integration for experiments |
+| `map` / `grid` | Print software map view |
+| `exp` | Print explorer framework status |
+
+Typical demo flow:
+
+```text
+status
+tel
+start
+enc_dbg
+tel
+stop
+```
+
+PC13 user button:
+
+- Long press: trigger `USER_ESTOP`.
+- Long press again while in FAULT/ESTOP: clear fault and reset odometry/map.
+
+## 6. Documentation Links
+
+- [Detailed project README](AMR_LiDAR_Robot/README.md)
+- [Demo Guide](AMR_LiDAR_Robot/Docs/Demo_Guide.md)
+- [Final Technical Report Draft](AMR_LiDAR_Robot/Docs/Final_Report.md)
+
+## 7. Current Limitations
+
+- The final demo is reactive LiDAR obstacle avoidance, not full benchmark
+  autonomy.
+- Live odometry integration is frozen by default:
+  `APP_ODO_FREEZE_DEFAULT=1`.
+- The map/explorer modules are software framework/skeleton components, not
+  verified live navigation.
+- OLED hardware display is disabled by default due to pin/resource constraints.
+- Bluetooth is not implemented.
+- The software ESTOP path is implemented, but it is not a hardware latched
+  power cut.
+- Full scan matching, ICP, A*, DWA, and robust global maze navigation remain
+  future work.
+
