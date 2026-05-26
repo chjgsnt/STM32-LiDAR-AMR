@@ -96,6 +96,7 @@ The final report records:
 - Differential-drive odometry pose and velocity telemetry
 - Lightweight 5x5 cell-level occupancy map
 - Lightweight DFS/frontier-style exploration skeleton
+- Embedded OLED UI pages and compact telemetry output
 - OLED status UI
 - USER BUTTON offline control
 - Serial telemetry and commands
@@ -129,6 +130,20 @@ cell path for return-to-start planning. The current version is intentionally a
 non-invasive action-plan skeleton: it logs planned turn/move/return steps and
 does not directly command motor PWM, so the proven LiDAR obstacle avoidance and
 return executor remain in control of chassis motion.
+
+## Embedded UI And Telemetry
+
+`app_ui` provides three low-rate SSD1306 OLED status pages: system/fault/LiDAR
+and adjustable parameters, odometry pose/velocity, and map/explorer status. If
+the OLED is not detected, the same four-line page falls back to serial logs.
+Serial commands `ui`, `page 0`, `page 1`, `page 2`, and `tel` support UI
+inspection, page switching, and compact telemetry for validation videos.
+
+ADC-based parameter telemetry is prepared in the UI layer with filtered
+speed-limit, obstacle-threshold, and wall-threshold values. It is displayed and
+reported by telemetry by default; it does not directly alter obstacle avoidance
+or motor output unless the ADC path is explicitly enabled and safely connected
+in a future hardware pass.
 
 Scan matching, full occupancy-grid SLAM, and full planner recovery are not yet
 implemented. They are future extensions on top of the current odometry pose,

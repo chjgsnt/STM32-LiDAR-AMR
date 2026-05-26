@@ -9,6 +9,7 @@
 #include "app_button_control.h"
 #include "app_return_path.h"
 #include "app_safety.h"
+#include "app_ui.h"
 #include "bringup_log.h"
 #include "chassis.h"
 #include "usart.h"
@@ -49,6 +50,7 @@ static void App_SerialCommand_QueueLine(const char *line);
 static void App_SerialCommand_ProcessPendingCommand(void);
 static void App_SerialCommand_HandleLine(const char *line);
 static uint8_t App_SerialCommand_IsKnownCommand(const char *line);
+static uint8_t App_SerialCommand_ParsePageCommand(const char *line, uint8_t *page);
 static char App_SerialCommand_ToLower(char ch);
 static void App_SerialCommand_LogRxChar(char ch);
 static void App_SerialCommand_LogStatus(void);
@@ -76,7 +78,7 @@ void App_SerialCommand_Init(void)
     rx_status = App_SerialCommand_StartRx();
     if ((rx_status == HAL_OK) || (rx_status == HAL_BUSY))
     {
-        APP_LOG("[CMD] ready uart=huart2 commands=start stop explore return estop reset_fault odom_reset status map grid exp");
+        APP_LOG("[CMD] ready uart=huart2 commands=start stop explore return estop reset_fault odom_reset status map grid exp ui page tel");
         APP_LOG("[CMD] use newline: start<Enter> or no-newline command timeout=%u ms",
                 (unsigned int)APP_CMD_NO_NEWLINE_TIMEOUT_MS);
     }
@@ -256,6 +258,8 @@ static void App_SerialCommand_ProcessPendingCommand(void)
 
 static void App_SerialCommand_HandleLine(const char *line)
 {
+    uint8_t page = 0U;
+
     if (line == NULL)
     {
         return;
@@ -320,6 +324,7 @@ static void App_SerialCommand_HandleLine(const char *line)
 
         app_cmd_last_status_ms = now_ms;
         App_SerialCommand_LogStatus();
+        AppTelemetry_Print();
     }
     else if ((strcmp(line, "map") == 0) || (strcmp(line, "grid") == 0))
     {
@@ -329,6 +334,19 @@ static void App_SerialCommand_HandleLine(const char *line)
     else if (strcmp(line, "exp") == 0)
     {
         AppExplorer_PrintStatus();
+    }
+    else if (strcmp(line, "ui") == 0)
+    {
+        AppUI_PrintStatus();
+    }
+    else if (strcmp(line, "tel") == 0)
+    {
+        AppTelemetry_Print();
+    }
+    else if (App_SerialCommand_ParsePageCommand(line, &page) != 0U)
+    {
+        AppUI_SetPage(page);
+        AppUI_PrintStatus();
     }
     else
     {
@@ -353,7 +371,44 @@ static uint8_t App_SerialCommand_IsKnownCommand(const char *line)
             (strcmp(line, "status") == 0) ||
             (strcmp(line, "map") == 0) ||
             (strcmp(line, "grid") == 0) ||
-            (strcmp(line, "exp") == 0)) ? 1U : 0U;
+            (strcmp(line, "exp") == 0) ||
+            (strcmp(line, "ui") == 0) ||
+            (strcmp(line, "tel") == 0) ||
+            (App_SerialCommand_ParsePageCommand(line, NULL) != 0U)) ? 1U : 0U;
+}
+
+static uint8_t App_SerialCommand_ParsePageCommand(const char *line, uint8_t *page)
+{
+    uint8_t parsed_page;
+
+    if (line == NULL)
+    {
+        return 0U;
+    }
+
+    if ((strcmp(line, "page 0") == 0) || (strcmp(line, "page0") == 0))
+    {
+        parsed_page = 0U;
+    }
+    else if ((strcmp(line, "page 1") == 0) || (strcmp(line, "page1") == 0))
+    {
+        parsed_page = 1U;
+    }
+    else if ((strcmp(line, "page 2") == 0) || (strcmp(line, "page2") == 0))
+    {
+        parsed_page = 2U;
+    }
+    else
+    {
+        return 0U;
+    }
+
+    if (page != NULL)
+    {
+        *page = parsed_page;
+    }
+
+    return 1U;
 }
 
 static char App_SerialCommand_ToLower(char ch)
