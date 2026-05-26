@@ -1,6 +1,7 @@
 #include "app_serial_command.h"
 
 #include "amr_system.h"
+#include "app_explorer.h"
 #include "app_fault.h"
 #include "app_lidar.h"
 #include "app_map.h"
@@ -75,7 +76,7 @@ void App_SerialCommand_Init(void)
     rx_status = App_SerialCommand_StartRx();
     if ((rx_status == HAL_OK) || (rx_status == HAL_BUSY))
     {
-        APP_LOG("[CMD] ready uart=huart2 commands=start stop return estop reset_fault odom_reset status map grid");
+        APP_LOG("[CMD] ready uart=huart2 commands=start stop explore return estop reset_fault odom_reset status map grid exp");
         APP_LOG("[CMD] use newline: start<Enter> or no-newline command timeout=%u ms",
                 (unsigned int)APP_CMD_NO_NEWLINE_TIMEOUT_MS);
     }
@@ -264,8 +265,14 @@ static void App_SerialCommand_HandleLine(const char *line)
     {
         AMR_RequestStart("serial_start");
     }
+    else if (strcmp(line, "explore") == 0)
+    {
+        AMR_RequestStart("serial_explore");
+        AppExplorer_StartExplore();
+    }
     else if (strcmp(line, "stop") == 0)
     {
+        AppExplorer_Stop();
         if (AMR_GetState() == AMR_STATE_RETURN)
         {
             ReturnExecutor_Stop("serial_stop");
@@ -274,6 +281,7 @@ static void App_SerialCommand_HandleLine(const char *line)
     }
     else if (strcmp(line, "return") == 0)
     {
+        AppExplorer_StartReturn();
         AMR_RequestReturn("serial_return");
         if (AMR_GetState() == AMR_STATE_RETURN)
         {
@@ -286,12 +294,14 @@ static void App_SerialCommand_HandleLine(const char *line)
     }
     else if (strcmp(line, "estop") == 0)
     {
+        AppExplorer_Stop();
         ReturnExecutor_Stop("serial_estop");
         AMR_RequestEStop("serial_estop");
     }
     else if (strcmp(line, "reset_fault") == 0)
     {
         App_Safety_ClearFault();
+        AppExplorer_Reset();
         AMR_RequestResetFault("serial_reset_fault");
     }
     else if (strcmp(line, "odom_reset") == 0)
@@ -316,6 +326,10 @@ static void App_SerialCommand_HandleLine(const char *line)
         AppMap_PrintSummary();
         AppMap_PrintGrid();
     }
+    else if (strcmp(line, "exp") == 0)
+    {
+        AppExplorer_PrintStatus();
+    }
     else
     {
         APP_LOG("[CMD] unknown=%s", line);
@@ -330,6 +344,7 @@ static uint8_t App_SerialCommand_IsKnownCommand(const char *line)
     }
 
     return ((strcmp(line, "start") == 0) ||
+            (strcmp(line, "explore") == 0) ||
             (strcmp(line, "stop") == 0) ||
             (strcmp(line, "return") == 0) ||
             (strcmp(line, "estop") == 0) ||
@@ -337,7 +352,8 @@ static uint8_t App_SerialCommand_IsKnownCommand(const char *line)
             (strcmp(line, "odom_reset") == 0) ||
             (strcmp(line, "status") == 0) ||
             (strcmp(line, "map") == 0) ||
-            (strcmp(line, "grid") == 0)) ? 1U : 0U;
+            (strcmp(line, "grid") == 0) ||
+            (strcmp(line, "exp") == 0)) ? 1U : 0U;
 }
 
 static char App_SerialCommand_ToLower(char ch)
@@ -395,6 +411,7 @@ static void App_SerialCommand_LogStatus(void)
     AppFaultCode fault_code;
     const char *fault_name;
     AppMapSummary_t map_summary = {0, 0, APP_MAP_DIR_EAST, 0U, 0U, 0U};
+    AppExplorerStatus_t exp_status = {EXP_IDLE, 0, 0, 0, 0, APP_MAP_DIR_EAST, APP_MAP_DIR_EAST, 0U, 0U, 1U};
 
     (void)App_Safety_GetStatus(&safety);
     (void)Odom_GetPose(&pose);
@@ -411,6 +428,7 @@ static void App_SerialCommand_LogStatus(void)
     fault_code = AppFault_Get();
     fault_name = AppFault_IsActive() ? AppFault_Name(fault_code) : App_Safety_FaultName(safety.fault_code);
     (void)AppMap_GetSummary(&map_summary);
+    (void)AppExplorer_GetStatus(&exp_status);
 
     x_mm = App_SerialCommand_ScaleFloatRounded(pose.x_m, 1000.0f);
     y_mm = App_SerialCommand_ScaleFloatRounded(pose.y_m, 1000.0f);
@@ -451,6 +469,14 @@ static void App_SerialCommand_LogStatus(void)
             (unsigned int)map_summary.visited_count,
             (unsigned int)map_summary.known_edges,
             (unsigned int)map_summary.walls);
+    APP_LOG("[STATUS] explorer state=%s cell=(%d,%d) target=(%d,%d) path_len=%u mode=%s",
+            AppExplorer_StateName(exp_status.state),
+            exp_status.current_cx,
+            exp_status.current_cy,
+            exp_status.target_cx,
+            exp_status.target_cy,
+            (unsigned int)exp_status.path_len,
+            (exp_status.skeleton_only != 0U) ? "skeleton" : "drive");
 }
 
 static int32_t App_SerialCommand_ScaleFloatRounded(float value, float multiplier)

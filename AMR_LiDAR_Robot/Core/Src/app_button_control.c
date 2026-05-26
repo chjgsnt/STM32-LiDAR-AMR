@@ -1,6 +1,7 @@
 #include "app_button_control.h"
 
 #include "amr_system.h"
+#include "app_explorer.h"
 #include "app_fault.h"
 #include "app_odometry.h"
 #include "app_return_path.h"
@@ -133,11 +134,13 @@ static void App_ButtonControl_HandleShortPress(void)
         case AMR_STATE_IDLE:
             APP_LOG("[BTN] action=start");
             AMR_RequestStart("button_start");
+            AppExplorer_StartExplore();
             break;
 
         case AMR_STATE_EXPLORE:
         case AMR_STATE_AVOID:
             APP_LOG("[BTN] action=return");
+            AppExplorer_StartReturn();
             AMR_RequestReturn("button_return");
             if (AMR_GetState() == AMR_STATE_RETURN)
             {
@@ -147,6 +150,7 @@ static void App_ButtonControl_HandleShortPress(void)
 
         case AMR_STATE_RETURN:
             APP_LOG("[BTN] action=stop");
+            AppExplorer_Stop();
             ReturnExecutor_Stop("button_stop");
             (void)AMR_SetState(AMR_STATE_IDLE, "button_stop");
             Chassis_Stop();
@@ -155,12 +159,14 @@ static void App_ButtonControl_HandleShortPress(void)
         case AMR_STATE_FAULT:
             APP_LOG("[BTN] action=reset_fault");
             App_Safety_ClearFault();
+            AppExplorer_Reset();
             AMR_RequestResetFault("button_reset_fault");
             break;
 
         case AMR_STATE_ESTOP:
             APP_LOG("[BTN] action=reset_estop");
             App_Safety_ClearFault();
+            AppExplorer_Reset();
             AMR_RequestResetFault("button_reset_estop");
             break;
 
@@ -179,12 +185,14 @@ static void App_ButtonControl_HandleLongPress(void)
     {
         APP_LOG("[BTN] action=clear_fault_reset_odom");
         App_Safety_ClearFault();
+        AppExplorer_Reset();
         Odom_Reset();
         AMR_RequestResetFault("button_long_clear_fault");
         return;
     }
 
     APP_LOG("[BTN] action=estop");
+    AppExplorer_Stop();
     ReturnExecutor_Stop("button_estop");
     Chassis_Stop();
     AppFault_Set(FAULT_USER_ESTOP);

@@ -181,6 +181,21 @@ void AppMap_MarkVisited(int cx, int cy)
     app_map_cells[cy][cx].visited = 1U;
 }
 
+bool AppMap_IsVisited(int cx, int cy)
+{
+    if (app_map_initialized == 0U)
+    {
+        AppMap_Init();
+    }
+
+    if (AppMap_InBounds(cx, cy) == 0U)
+    {
+        return false;
+    }
+
+    return (app_map_cells[cy][cx].visited != 0U);
+}
+
 void AppMap_SetWall(int cx, int cy, AppMapDir dir, uint8_t has_wall)
 {
     static const int8_t dx[APP_MAP_DIR_COUNT] = {0, 1, 0, -1};

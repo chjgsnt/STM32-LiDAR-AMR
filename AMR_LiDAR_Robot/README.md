@@ -95,6 +95,7 @@ The final report records:
 - AMR state machine
 - Differential-drive odometry pose and velocity telemetry
 - Lightweight 5x5 cell-level occupancy map
+- Lightweight DFS/frontier-style exploration skeleton
 - OLED status UI
 - USER BUTTON offline control
 - Serial telemetry and commands
@@ -118,6 +119,16 @@ benchmark. It uses odometry pose to mark visited cells and LiDAR front/left/righ
 sector distances to mark known wall edges. This is a resource-constrained
 embedded preparation layer for future OGM/frontier exploration, not full SLAM or
 scan matching.
+
+## Exploration Skeleton
+
+`app_explorer` adds a lightweight DFS/frontier-style cell exploration state
+machine. It uses the 5x5 map, odometry-derived current cell, heading, and
+known wall edges to choose the next neighboring cell. It records a fixed-size
+cell path for return-to-start planning. The current version is intentionally a
+non-invasive action-plan skeleton: it logs planned turn/move/return steps and
+does not directly command motor PWM, so the proven LiDAR obstacle avoidance and
+return executor remain in control of chassis motion.
 
 Scan matching, full occupancy-grid SLAM, and full planner recovery are not yet
 implemented. They are future extensions on top of the current odometry pose,

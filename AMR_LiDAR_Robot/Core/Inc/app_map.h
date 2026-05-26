@@ -60,6 +60,7 @@ void AppMap_Reset(void);
 void AppMap_UpdateFromPoseAndLidar(void);
 void AppMap_GetRobotCell(int *cx, int *cy);
 void AppMap_MarkVisited(int cx, int cy);
+bool AppMap_IsVisited(int cx, int cy);
 void AppMap_SetWall(int cx, int cy, AppMapDir dir, uint8_t has_wall);
 void AppMap_GetWall(int cx, int cy, AppMapDir dir, uint8_t *known, uint8_t *has_wall);
 void AppMap_PrintSummary(void);
