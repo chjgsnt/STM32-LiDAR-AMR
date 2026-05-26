@@ -12,6 +12,9 @@ typedef enum
     SCRIPT_IDLE = 0,
     SCRIPT_RUNNING,
     SCRIPT_WAIT_OBSTACLE_CLEAR,
+    SCRIPT_AUTO_FORWARD,
+    SCRIPT_AUTO_TURN_RIGHT,
+    SCRIPT_AUTO_WAIT_CLEAR,
     SCRIPT_DONE,
     SCRIPT_ABORTED,
     SCRIPT_FAULT
@@ -30,6 +33,7 @@ typedef enum
 void AppBenchmarkScript_Init(void);
 void AppBenchmarkScript_StartExit(void);
 void AppBenchmarkScript_StartReturn(void);
+void AppBenchmarkScript_StartAuto(void);
 void AppBenchmarkScript_Stop(const char *reason);
 void AppBenchmarkScript_Reset(void);
 void AppBenchmarkScript_Update(void);

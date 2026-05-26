@@ -58,13 +58,17 @@ Experimental benchmark script commands:
 
 - `script_exit`: start a short time-based Start-to-Exit script.
 - `script_return`: start a short time-based Exit-to-Start script.
+- `script_auto`: start an experimental reactive maze mode for continuous
+  obstacle-avoidance exploration attempts.
 - `script_stop`: stop the script and safe stop.
+- `script_auto_stop`: alias for stopping `script_auto`.
 - `script_status`: print script state, step index, action, elapsed, and remaining time.
 - `script_reset`: reset script state.
 
-The benchmark script mode is experimental and time-based. It is provided to help
-tune a fixed 5x5 maze run, but it is not claimed as full autonomous SLAM,
-mapping, or Start-to-Exit-to-Return navigation.
+The benchmark script modes are experimental. The fixed scripts are time-based,
+and `script_auto` is a simple reactive fallback for continuous maze exploration
+attempts. They are not claimed as full autonomous SLAM, mapping, A*, or
+Start-to-Exit-to-Return navigation.
 
 ## 3. Pre-Demo Checklist
 
@@ -199,10 +203,22 @@ Default `script_return` steps:
 4. `FORWARD`, duty `520`, duration `900 ms`.
 5. `STOP`, duration `200 ms`.
 
+Experimental `script_auto` reactive mode:
+
+- Starts only from `AMR_STATE_IDLE` with no active fault.
+- `SCRIPT_AUTO_FORWARD`: drive forward at duty `520`.
+- `SCRIPT_AUTO_TURN_RIGHT`: if fresh front LiDAR is below `250 mm`, stop and
+  turn right at duty `420` for `550 ms`.
+- `SCRIPT_AUTO_WAIT_CLEAR`: if front LiDAR is invalid or stale, stop until
+  fresh front distance is above `450 mm`.
+- `script_stop`, `script_auto_stop`, fault, or ESTOP safe-stops immediately.
+- This mode is a continuous wall-follow/reactive exploration fallback and does
+  not guarantee a complete Start-to-Exit-to-Return result.
+
 PC13 button behavior on the `exp/benchmark-script` branch:
 
 - Short press in IDLE alternates `script_exit` and `script_return`.
-- Short press while a script is running stops the script and safe-stops.
+- Short press while a script or `script_auto` is running stops it and safe-stops.
 - Short press in non-IDLE non-script states requests stop.
 - Short press in FAULT/ESTOP is ignored; use long press to recover.
 - Long press while running still triggers USER_ESTOP.

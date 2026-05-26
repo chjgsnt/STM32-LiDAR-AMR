@@ -14,6 +14,11 @@
 #define SCRIPT_OBSTACLE_CLEAR_MM 450U
 #define SCRIPT_LIDAR_STALE_MS 800U
 #define SCRIPT_LOG_INTERVAL_MS 1000U
+#define AUTO_FORWARD_DUTY 520
+#define AUTO_TURN_DUTY 420
+#define AUTO_TURN_RIGHT_MS 550U
+#define AUTO_OBSTACLE_STOP_MM 250U
+#define AUTO_OBSTACLE_CLEAR_MM 450U
 
 typedef struct
 {
@@ -78,11 +83,23 @@ static void AppBenchmarkScript_ResumeCurrentStep(uint32_t now_ms);
 static void AppBenchmarkScript_Abort(BenchmarkScriptState_t state, const char *reason);
 static void AppBenchmarkScript_CheckForwardSafety(uint32_t now_ms);
 static void AppBenchmarkScript_UpdateWaitObstacleClear(uint32_t now_ms);
+static void AppBenchmarkScript_UpdateAuto(uint32_t now_ms);
+static void AppBenchmarkScript_UpdateAutoForward(uint32_t now_ms);
+static void AppBenchmarkScript_UpdateAutoTurnRight(uint32_t now_ms);
+static void AppBenchmarkScript_UpdateAutoWaitClear(uint32_t now_ms);
+static void AppBenchmarkScript_EnterAutoForward(uint32_t now_ms, const char *reason);
+static void AppBenchmarkScript_EnterAutoTurnRight(uint32_t now_ms, uint32_t front_mm);
+static void AppBenchmarkScript_EnterAutoWaitClear(uint32_t now_ms, const char *reason);
 static const BenchmarkScriptStep_t *AppBenchmarkScript_CurrentStep(void);
 static uint32_t AppBenchmarkScript_ElapsedMs(uint32_t now_ms, uint32_t then_ms);
 static bool AppBenchmarkScript_LidarFrontClear(uint32_t now_ms);
 static bool AppBenchmarkScript_LidarFrontBlocked(uint32_t now_ms);
 static bool AppBenchmarkScript_LidarFrontStale(uint32_t now_ms);
+static bool AppBenchmarkScript_AutoFrontClear(uint32_t now_ms);
+static bool AppBenchmarkScript_AutoFrontBlocked(uint32_t now_ms);
+static bool AppBenchmarkScript_IsAutoState(BenchmarkScriptState_t state);
+static bool AppBenchmarkScript_IsActiveState(BenchmarkScriptState_t state);
+static const char *AppBenchmarkScript_CurrentName(void);
 static void AppBenchmarkScript_LogLowRate(uint32_t now_ms, const char *message);
 
 void AppBenchmarkScript_Init(void)
@@ -114,6 +131,47 @@ void AppBenchmarkScript_StartReturn(void)
     AppBenchmarkScript_Start(&return_script);
 }
 
+void AppBenchmarkScript_StartAuto(void)
+{
+    uint32_t now_ms;
+
+    if (script_initialized == 0U)
+    {
+        AppBenchmarkScript_Init();
+    }
+
+    if (AppBenchmarkScript_IsActiveState(script_state))
+    {
+        APP_LOG("SCRIPT: rejected reason=busy state=%s", AppBenchmarkScript_StateName(script_state));
+        return;
+    }
+
+    AppBenchmarkScript_ClearRuntime();
+
+    if (AMR_GetState() != AMR_STATE_IDLE)
+    {
+        APP_LOG("SCRIPT: auto rejected reason=amr_state state=%s", AMR_StateName(AMR_GetState()));
+        return;
+    }
+
+    if (AppFault_IsActive())
+    {
+        APP_LOG("SCRIPT: auto rejected reason=fault fault=%s", AppFault_Name(AppFault_Get()));
+        return;
+    }
+
+    script_current = NULL;
+    script_step_index = 0U;
+    now_ms = HAL_GetTick();
+    APP_LOG("SCRIPT: auto start forward_duty=%d turn_duty=%d turn_ms=%u stop=%umm clear=%umm",
+            (int)AUTO_FORWARD_DUTY,
+            (int)AUTO_TURN_DUTY,
+            (unsigned int)AUTO_TURN_RIGHT_MS,
+            (unsigned int)AUTO_OBSTACLE_STOP_MM,
+            (unsigned int)AUTO_OBSTACLE_CLEAR_MM);
+    AppBenchmarkScript_EnterAutoForward(now_ms, "start");
+}
+
 void AppBenchmarkScript_Stop(const char *reason)
 {
     if (script_initialized == 0U)
@@ -121,7 +179,7 @@ void AppBenchmarkScript_Stop(const char *reason)
         AppBenchmarkScript_Init();
     }
 
-    if ((script_state == SCRIPT_RUNNING) || (script_state == SCRIPT_WAIT_OBSTACLE_CLEAR))
+    if (AppBenchmarkScript_IsActiveState(script_state))
     {
         Chassis_Stop();
         script_state = SCRIPT_ABORTED;
@@ -151,7 +209,7 @@ void AppBenchmarkScript_Update(void)
         AppBenchmarkScript_Init();
     }
 
-    if ((script_state != SCRIPT_RUNNING) && (script_state != SCRIPT_WAIT_OBSTACLE_CLEAR))
+    if (!AppBenchmarkScript_IsActiveState(script_state))
     {
         return;
     }
@@ -161,6 +219,12 @@ void AppBenchmarkScript_Update(void)
     if (AppFault_IsActive() || (AMR_GetState() == AMR_STATE_ESTOP) || (AMR_GetState() == AMR_STATE_FAULT))
     {
         AppBenchmarkScript_Abort(SCRIPT_FAULT, "fault_or_estop");
+        return;
+    }
+
+    if (AppBenchmarkScript_IsAutoState(script_state))
+    {
+        AppBenchmarkScript_UpdateAuto(now_ms);
         return;
     }
 
@@ -215,6 +279,7 @@ void AppBenchmarkScript_PrintStatus(void)
     uint32_t remaining_ms = 0U;
     uint8_t display_step_index = 0U;
     const char *action_name = "NONE";
+    const char *script_name = AppBenchmarkScript_CurrentName();
 
     if (((script_state == SCRIPT_RUNNING) || (script_state == SCRIPT_WAIT_OBSTACLE_CLEAR)) &&
         (step != NULL) &&
@@ -223,6 +288,11 @@ void AppBenchmarkScript_PrintStatus(void)
         show_step = 1U;
         action_name = AppBenchmarkScript_ActionName(script_current_action);
         display_step_index = (uint8_t)(script_step_index + 1U);
+    }
+    else if (AppBenchmarkScript_IsAutoState(script_state) && (script_current_action_valid != 0U))
+    {
+        show_step = 1U;
+        action_name = AppBenchmarkScript_ActionName(script_current_action);
     }
     else if ((script_state == SCRIPT_DONE) && (script_current != NULL))
     {
@@ -238,10 +308,14 @@ void AppBenchmarkScript_PrintStatus(void)
     {
         remaining_ms = (elapsed_ms < step->duration_ms) ? (step->duration_ms - elapsed_ms) : 0U;
     }
+    else if (script_state == SCRIPT_AUTO_TURN_RIGHT)
+    {
+        remaining_ms = (elapsed_ms < AUTO_TURN_RIGHT_MS) ? (AUTO_TURN_RIGHT_MS - elapsed_ms) : 0U;
+    }
 
     APP_LOG("SCRIPT: status state=%s name=%s step=%u/%u action=%s elapsed=%lums remaining=%lums",
             AppBenchmarkScript_StateName(script_state),
-            (script_current != NULL) ? script_current->name : "none",
+            script_name,
             (unsigned int)display_step_index,
             (unsigned int)((script_current != NULL) ? script_current->count : 0U),
             action_name,
@@ -251,7 +325,7 @@ void AppBenchmarkScript_PrintStatus(void)
 
 uint8_t AppBenchmarkScript_IsActive(void)
 {
-    return ((script_state == SCRIPT_RUNNING) || (script_state == SCRIPT_WAIT_OBSTACLE_CLEAR)) ? 1U : 0U;
+    return AppBenchmarkScript_IsActiveState(script_state) ? 1U : 0U;
 }
 
 BenchmarkScriptState_t AppBenchmarkScript_GetState(void)
@@ -269,6 +343,12 @@ const char *AppBenchmarkScript_StateName(BenchmarkScriptState_t state)
             return "RUNNING";
         case SCRIPT_WAIT_OBSTACLE_CLEAR:
             return "WAIT_OBSTACLE_CLEAR";
+        case SCRIPT_AUTO_FORWARD:
+            return "SCRIPT_AUTO_FORWARD";
+        case SCRIPT_AUTO_TURN_RIGHT:
+            return "SCRIPT_AUTO_TURN_RIGHT";
+        case SCRIPT_AUTO_WAIT_CLEAR:
+            return "SCRIPT_AUTO_WAIT_CLEAR";
         case SCRIPT_DONE:
             return "DONE";
         case SCRIPT_ABORTED:
@@ -314,7 +394,7 @@ static void AppBenchmarkScript_Start(const BenchmarkScriptDef_t *script)
         return;
     }
 
-    if ((script_state == SCRIPT_RUNNING) || (script_state == SCRIPT_WAIT_OBSTACLE_CLEAR))
+    if (AppBenchmarkScript_IsActiveState(script_state))
     {
         APP_LOG("SCRIPT: rejected reason=busy state=%s", AppBenchmarkScript_StateName(script_state));
         return;
@@ -527,6 +607,143 @@ static void AppBenchmarkScript_UpdateWaitObstacleClear(uint32_t now_ms)
     AppBenchmarkScript_LogLowRate(now_ms, "SCRIPT: waiting obstacle clear");
 }
 
+static void AppBenchmarkScript_UpdateAuto(uint32_t now_ms)
+{
+    switch (script_state)
+    {
+        case SCRIPT_AUTO_FORWARD:
+            AppBenchmarkScript_UpdateAutoForward(now_ms);
+            break;
+
+        case SCRIPT_AUTO_TURN_RIGHT:
+            AppBenchmarkScript_UpdateAutoTurnRight(now_ms);
+            break;
+
+        case SCRIPT_AUTO_WAIT_CLEAR:
+            AppBenchmarkScript_UpdateAutoWaitClear(now_ms);
+            break;
+
+        default:
+            break;
+    }
+}
+
+static void AppBenchmarkScript_UpdateAutoForward(uint32_t now_ms)
+{
+    const AppLidarStatus *lidar = App_Lidar_GetStatus();
+
+    if (script_state != SCRIPT_AUTO_FORWARD)
+    {
+        return;
+    }
+
+    if (AppBenchmarkScript_LidarFrontStale(now_ms))
+    {
+        AppBenchmarkScript_EnterAutoWaitClear(now_ms, "lidar_invalid_or_stale");
+        return;
+    }
+
+    if (AppBenchmarkScript_AutoFrontBlocked(now_ms))
+    {
+        uint32_t front_mm = (lidar != NULL) ? lidar->front_min_mm : 0U;
+        Chassis_Stop();
+        AppBenchmarkScript_EnterAutoTurnRight(now_ms, front_mm);
+        return;
+    }
+
+    Chassis_Forward(AUTO_FORWARD_DUTY);
+    AppBenchmarkScript_LogLowRate(now_ms, "SCRIPT: auto forward");
+}
+
+static void AppBenchmarkScript_UpdateAutoTurnRight(uint32_t now_ms)
+{
+    if (script_state != SCRIPT_AUTO_TURN_RIGHT)
+    {
+        return;
+    }
+
+    if (AppBenchmarkScript_ElapsedMs(now_ms, script_step_start_ms) >= AUTO_TURN_RIGHT_MS)
+    {
+        APP_LOG("SCRIPT: auto turn_right done elapsed=%lums",
+                (unsigned long)AppBenchmarkScript_ElapsedMs(now_ms, script_step_start_ms));
+        AppBenchmarkScript_EnterAutoForward(now_ms, "turn_done");
+        return;
+    }
+
+    Chassis_TurnRight(AUTO_TURN_DUTY);
+}
+
+static void AppBenchmarkScript_UpdateAutoWaitClear(uint32_t now_ms)
+{
+    if (script_state != SCRIPT_AUTO_WAIT_CLEAR)
+    {
+        return;
+    }
+
+    Chassis_Stop();
+    if (AppBenchmarkScript_AutoFrontClear(now_ms))
+    {
+        AppBenchmarkScript_EnterAutoForward(now_ms, "front_clear");
+        return;
+    }
+
+    AppBenchmarkScript_LogLowRate(now_ms, "SCRIPT: auto waiting clear");
+}
+
+static void AppBenchmarkScript_EnterAutoForward(uint32_t now_ms, const char *reason)
+{
+    script_current = NULL;
+    script_step_index = 0U;
+    script_state = SCRIPT_AUTO_FORWARD;
+    script_step_start_ms = now_ms;
+    script_step_active = 1U;
+    script_step_just_started = 0U;
+    script_wait_start_ms = 0U;
+    script_current_action = SCRIPT_ACT_FORWARD;
+    script_current_action_valid = 1U;
+    Chassis_Forward(AUTO_FORWARD_DUTY);
+    APP_LOG("SCRIPT: auto state=FORWARD duty=%d reason=%s",
+            (int)AUTO_FORWARD_DUTY,
+            (reason != NULL) ? reason : "none");
+    AppBenchmarkScript_UpdateAutoForward(now_ms);
+}
+
+static void AppBenchmarkScript_EnterAutoTurnRight(uint32_t now_ms, uint32_t front_mm)
+{
+    script_current = NULL;
+    script_step_index = 0U;
+    script_state = SCRIPT_AUTO_TURN_RIGHT;
+    script_step_start_ms = now_ms;
+    script_step_active = 1U;
+    script_step_just_started = 0U;
+    script_wait_start_ms = 0U;
+    script_current_action = SCRIPT_ACT_TURN_RIGHT;
+    script_current_action_valid = 1U;
+    Chassis_TurnRight(AUTO_TURN_DUTY);
+    APP_LOG("SCRIPT: auto state=TURN_RIGHT duty=%d dur=%ums front=%u stop=%u",
+            (int)AUTO_TURN_DUTY,
+            (unsigned int)AUTO_TURN_RIGHT_MS,
+            (unsigned int)front_mm,
+            (unsigned int)AUTO_OBSTACLE_STOP_MM);
+}
+
+static void AppBenchmarkScript_EnterAutoWaitClear(uint32_t now_ms, const char *reason)
+{
+    script_current = NULL;
+    script_step_index = 0U;
+    script_state = SCRIPT_AUTO_WAIT_CLEAR;
+    script_step_start_ms = now_ms;
+    script_wait_start_ms = now_ms;
+    script_step_active = 1U;
+    script_step_just_started = 0U;
+    script_current_action = SCRIPT_ACT_WAIT;
+    script_current_action_valid = 1U;
+    Chassis_Stop();
+    APP_LOG("SCRIPT: auto state=WAIT_CLEAR reason=%s clear=%u",
+            (reason != NULL) ? reason : "none",
+            (unsigned int)AUTO_OBSTACLE_CLEAR_MM);
+}
+
 static const BenchmarkScriptStep_t *AppBenchmarkScript_CurrentStep(void)
 {
     if ((script_current == NULL) || (script_step_index >= script_current->count))
@@ -591,6 +808,69 @@ static bool AppBenchmarkScript_LidarFrontStale(uint32_t now_ms)
     }
 
     return (AppBenchmarkScript_ElapsedMs(now_ms, lidar->last_valid_update_ms) > SCRIPT_LIDAR_STALE_MS);
+}
+
+static bool AppBenchmarkScript_AutoFrontClear(uint32_t now_ms)
+{
+    const AppLidarStatus *lidar = App_Lidar_GetStatus();
+
+    if ((lidar == NULL) || (lidar->front_valid == 0U))
+    {
+        return false;
+    }
+
+    if (AppBenchmarkScript_ElapsedMs(now_ms, lidar->last_valid_update_ms) > SCRIPT_LIDAR_STALE_MS)
+    {
+        return false;
+    }
+
+    return (lidar->front_min_mm > AUTO_OBSTACLE_CLEAR_MM);
+}
+
+static bool AppBenchmarkScript_AutoFrontBlocked(uint32_t now_ms)
+{
+    const AppLidarStatus *lidar = App_Lidar_GetStatus();
+
+    if ((lidar == NULL) || (lidar->front_valid == 0U))
+    {
+        return false;
+    }
+
+    if (AppBenchmarkScript_ElapsedMs(now_ms, lidar->last_valid_update_ms) > SCRIPT_LIDAR_STALE_MS)
+    {
+        return false;
+    }
+
+    return (lidar->front_min_mm < AUTO_OBSTACLE_STOP_MM);
+}
+
+static bool AppBenchmarkScript_IsAutoState(BenchmarkScriptState_t state)
+{
+    return ((state == SCRIPT_AUTO_FORWARD) ||
+            (state == SCRIPT_AUTO_TURN_RIGHT) ||
+            (state == SCRIPT_AUTO_WAIT_CLEAR));
+}
+
+static bool AppBenchmarkScript_IsActiveState(BenchmarkScriptState_t state)
+{
+    return ((state == SCRIPT_RUNNING) ||
+            (state == SCRIPT_WAIT_OBSTACLE_CLEAR) ||
+            AppBenchmarkScript_IsAutoState(state));
+}
+
+static const char *AppBenchmarkScript_CurrentName(void)
+{
+    if (script_current != NULL)
+    {
+        return script_current->name;
+    }
+
+    if (AppBenchmarkScript_IsAutoState(script_state))
+    {
+        return "script_auto";
+    }
+
+    return "none";
 }
 
 static void AppBenchmarkScript_LogLowRate(uint32_t now_ms, const char *message)

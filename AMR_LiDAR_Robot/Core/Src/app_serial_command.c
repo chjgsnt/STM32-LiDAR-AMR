@@ -89,7 +89,7 @@ void App_SerialCommand_Init(void)
     if ((rx_status == HAL_OK) || (rx_status == HAL_BUSY))
     {
         APP_LOG("[CMD] ready uart=huart2 commands=start stop explore return estop reset_fault odo_reset odom_reset enc_dbg odom_dbg odo_freeze map_reset motor_test status map grid exp ui page tel");
-        APP_LOG("[CMD] script commands=script_exit script_return script_stop script_status script_reset");
+        APP_LOG("[CMD] script commands=script_exit script_return script_auto script_stop script_auto_stop script_status script_reset");
         APP_LOG("[CMD] use newline: start<Enter> or no-newline command timeout=%u ms",
                 (unsigned int)APP_CMD_NO_NEWLINE_TIMEOUT_MS);
     }
@@ -370,7 +370,11 @@ static void App_SerialCommand_HandleLine(const char *line)
     {
         AppBenchmarkScript_StartReturn();
     }
-    else if (strcmp(line, "script_stop") == 0)
+    else if (strcmp(line, "script_auto") == 0)
+    {
+        AppBenchmarkScript_StartAuto();
+    }
+    else if ((strcmp(line, "script_stop") == 0) || (strcmp(line, "script_auto_stop") == 0))
     {
         AppBenchmarkScript_Stop("serial_script_stop");
     }
@@ -455,7 +459,9 @@ static uint8_t App_SerialCommand_IsKnownCommand(const char *line)
             (strcmp(line, "enc_dbg") == 0) ||
             (strcmp(line, "script_exit") == 0) ||
             (strcmp(line, "script_return") == 0) ||
+            (strcmp(line, "script_auto") == 0) ||
             (strcmp(line, "script_stop") == 0) ||
+            (strcmp(line, "script_auto_stop") == 0) ||
             (strcmp(line, "script_status") == 0) ||
             (strcmp(line, "script_reset") == 0) ||
             (strcmp(line, "map_reset") == 0) ||

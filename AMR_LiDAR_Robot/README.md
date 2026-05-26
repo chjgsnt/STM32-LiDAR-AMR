@@ -149,7 +149,9 @@ Diagnostics and framework commands:
 | `page 0/1/2` | Switch serial UI page state |
 | `script_exit` | Start experimental time-based Start-to-Exit script |
 | `script_return` | Start experimental time-based Exit-to-Start script |
+| `script_auto` | Start experimental reactive maze mode |
 | `script_stop` | Stop experimental benchmark script and safe stop |
+| `script_auto_stop` | Stop experimental reactive maze mode and safe stop |
 | `script_status` | Print experimental script state and current step |
 | `script_reset` | Reset experimental script state |
 
@@ -212,7 +214,8 @@ FAULT: safe stop
 - Final demo is reactive LiDAR obstacle avoidance, not full autonomous maze
   solving.
 - Experimental `script_exit` / `script_return` commands are time-based benchmark
-  helpers only; they are not full SLAM, mapping, or autonomous navigation.
+  helpers only, and `script_auto` is a simple reactive exploration fallback;
+  they are not full SLAM, mapping, A*, or autonomous navigation.
 - Live odometry integration is frozen by default:
   `APP_ODO_FREEZE_DEFAULT=1`.
 - `status` and `tel` should show `odo_frozen=1` in the final demo.
@@ -268,7 +271,7 @@ Experimental benchmark script mode:
 - On the `exp/benchmark-script` branch, PC13 short press is also mapped to the
   experimental script controller:
   - short press in IDLE alternates `script_exit` and `script_return`,
-  - short press while a script is running stops the script and safe-stops,
+  - short press while a script or `script_auto` is running stops it and safe-stops,
   - short press in non-IDLE non-script states requests stop,
   - short press in FAULT/ESTOP is ignored; long press is required to clear fault.
 - PC13 long press behavior is unchanged:
@@ -285,7 +288,16 @@ Experimental benchmark script mode:
   - turn left duty 420 for 550 ms,
   - forward duty 520 for 900 ms,
   - stop for 200 ms.
-- The scripts are experimental and time-based. Tune duty and duration in
+- `script_auto` experimental reactive maze mode:
+  - starts only from IDLE with no active fault,
+  - forward duty 520 while front LiDAR is fresh and clear,
+  - stop and turn right duty 420 for 550 ms when front is below 250 mm,
+  - stop and wait when front LiDAR is invalid or stale,
+  - resume forward when front is above 450 mm.
+- The fixed scripts are experimental and time-based; `script_auto` is
+  experimental and reactive. Tune duty and duration in
   `Core/Src/app_benchmark_script.c` for a specific 5x5 maze layout.
 - Forward script steps stop and wait if LiDAR front distance is below the script
   obstacle threshold. Fault or USER_ESTOP aborts the script immediately.
+- `script_auto` is intended for continuous obstacle-avoidance exploration
+  attempts only; it does not guarantee full Start-to-Exit-to-Return navigation.

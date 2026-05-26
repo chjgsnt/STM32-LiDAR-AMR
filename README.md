@@ -120,7 +120,9 @@ Diagnostics/framework commands:
 | `exp` | Print explorer framework status |
 | `script_exit` | Start experimental time-based Start-to-Exit script |
 | `script_return` | Start experimental time-based Exit-to-Start script |
+| `script_auto` | Start experimental reactive maze mode |
 | `script_stop` | Stop experimental benchmark script and safe stop |
+| `script_auto_stop` | Stop experimental reactive maze mode and safe stop |
 | `script_status` | Print experimental script state |
 
 Typical demo flow:
@@ -154,7 +156,8 @@ PC13 user button:
 - The map/explorer modules are software framework/skeleton components, not
   verified live navigation.
 - Experimental `script_exit` / `script_return` commands are time-based benchmark
-  helpers and are not full autonomous navigation.
+  helpers, and `script_auto` is a simple reactive exploration fallback; they
+  are not full autonomous navigation, SLAM, or A*.
 - OLED hardware display is disabled by default due to pin/resource constraints.
 - Bluetooth is not implemented.
 - The software ESTOP path is implemented, but it is not a hardware latched
