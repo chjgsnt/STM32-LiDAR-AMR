@@ -276,13 +276,13 @@ Experimental benchmark script mode:
   - FAULT/ESTOP state: clear fault and reset odometry/map.
 - `script_exit` default steps:
   - forward duty 520 for 900 ms,
-  - turn right duty 420 for 800 ms,
+  - turn right duty 420 for 550 ms,
   - forward duty 520 for 900 ms,
   - stop for 200 ms.
 - `script_return` default steps:
-  - turn right duty 420 for 1600 ms,
+  - turn right duty 420 for 1750 ms,
   - forward duty 520 for 900 ms,
-  - turn left duty 420 for 800 ms,
+  - turn left duty 420 for 550 ms,
   - forward duty 520 for 900 ms,
   - stop for 200 ms.
 - The scripts are experimental and time-based. Tune duty and duration in

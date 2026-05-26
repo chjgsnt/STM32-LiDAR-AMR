@@ -187,15 +187,15 @@ avoidance command.
 Default `script_exit` steps:
 
 1. `FORWARD`, duty `520`, duration `900 ms`.
-2. `TURN_RIGHT`, duty `420`, duration `800 ms`.
+2. `TURN_RIGHT`, duty `420`, duration `550 ms`.
 3. `FORWARD`, duty `520`, duration `900 ms`.
 4. `STOP`, duration `200 ms`.
 
 Default `script_return` steps:
 
-1. `TURN_RIGHT`, duty `420`, duration `1600 ms`.
+1. `TURN_RIGHT`, duty `420`, duration `1750 ms`.
 2. `FORWARD`, duty `520`, duration `900 ms`.
-3. `TURN_LEFT`, duty `420`, duration `800 ms`.
+3. `TURN_LEFT`, duty `420`, duration `550 ms`.
 4. `FORWARD`, duty `520`, duration `900 ms`.
 5. `STOP`, duration `200 ms`.
 
