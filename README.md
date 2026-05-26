@@ -144,8 +144,9 @@ PC13 user button:
 - On `exp/benchmark-script`, short press 1 starts `script_auto`; short press 2
   stops auto and arms return; short press 3 starts `script_return_auto`; short
   press 4 stops return and resets the button flow to auto.
-- Exit detection is manual by button press. `script_return_auto` is a reactive
-  return attempt, not guaranteed map-based return-to-start.
+- Exit detection is manual by button press. `script_return_auto` starts with a
+  timed 180-degree turn-around, then continues reactive return exploration; it
+  is not guaranteed map-based return-to-start.
 
 ## 6. Documentation Links
 

@@ -301,7 +301,8 @@ Experimental benchmark script mode:
   - stop and wait when front LiDAR is invalid or stale,
   - resume forward when front is above 520 mm.
 - `script_return_auto` experimental reactive return attempt:
-  - uses the same forward trim and obstacle thresholds as `script_auto`,
+  - starts with a timed 180-degree turn-around: turn right duty 420 for 1750 ms,
+  - then uses the same forward trim and obstacle thresholds as `script_auto`,
   - turns left for 550 ms when front is below 360 mm,
   - runs continuously until `script_stop`, short press, fault, or ESTOP.
 - Forward trim for benchmark `FORWARD` actions: left=498, right=500. Fixed
@@ -311,5 +312,7 @@ Experimental benchmark script mode:
   `Core/Src/app_benchmark_script.c` for a specific 5x5 maze layout.
 - Forward script steps stop and wait if LiDAR front distance is below the script
   obstacle threshold. Fault or USER_ESTOP aborts the script immediately.
-- `script_auto` and `script_return_auto` are reactive attempts only; they do not
-  guarantee full Start-to-Exit-to-Return navigation.
+- `script_auto` and `script_return_auto` are reactive attempts only;
+  `script_return_auto` starts with a timed 180-degree turn-around and then
+  continues reactive return exploration, but it does not guarantee map-based
+  return-to-start.

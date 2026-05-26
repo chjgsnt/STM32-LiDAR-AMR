@@ -222,13 +222,16 @@ Experimental `script_auto` reactive mode:
 Experimental `script_return_auto` reactive mode:
 
 - Starts only from `AMR_STATE_IDLE` with no active fault.
-- `SCRIPT_RETURN_AUTO_FORWARD`: drive forward with trim left=498, right=500.
+- `SCRIPT_RETURN_AUTO_TURN_AROUND`: start with a timed 180-degree turn-around,
+  turning right at duty `420` for `1750 ms`.
+- `SCRIPT_RETURN_AUTO_FORWARD`: after turn-around, drive forward with trim
+  left=498, right=500.
 - `SCRIPT_RETURN_AUTO_TURN_LEFT`: if fresh front LiDAR is below `360 mm`, stop
   and turn left at duty `420` for `550 ms`.
 - `SCRIPT_RETURN_AUTO_WAIT_CLEAR`: if front LiDAR is invalid or stale, stop
   until fresh front distance is above `520 mm`.
-- This mode is a reactive return attempt, not guaranteed map-based
-  return-to-start.
+- This mode then continues reactive return exploration, but it is not
+  guaranteed map-based return-to-start.
 
 PC13 button behavior on the `exp/benchmark-script` branch:
 
@@ -241,8 +244,9 @@ PC13 button behavior on the `exp/benchmark-script` branch:
 - Short press in FAULT/ESTOP is ignored; use long press to recover.
 - Long press while running still triggers USER_ESTOP.
 - Long press in FAULT/ESTOP clears fault and resets odometry/map.
-- Exit detection is manual by PC13 short press; `script_return_auto` is not
-  guaranteed map-based return-to-start.
+- Exit detection is manual by PC13 short press; `script_return_auto` starts
+  with a timed 180-degree turn-around and then continues reactive return
+  exploration, but it is not guaranteed map-based return-to-start.
 
 Safety behavior:
 
