@@ -1,6 +1,7 @@
 #include "app_fault.h"
 
 #include "amr_system.h"
+#include "app_odometry.h"
 #include "bringup_log.h"
 #include "chassis.h"
 #include "motor_driver.h"
@@ -115,5 +116,6 @@ static void AppFault_SafeStop(void)
 {
     Chassis_Stop();
     MotorDriver_StopAll();
+    AppOdo_SyncBaseline();
     (void)app_fault_time_ms;
 }

@@ -2,6 +2,7 @@
 
 #include "app_lidar.h"
 #include "app_lidar_obstacle_avoidance.h"
+#include "app_odometry.h"
 #include "app_return_path.h"
 #include "bringup_log.h"
 #include "chassis.h"
@@ -247,6 +248,7 @@ static void AMR_ApplySafeStop(void)
 {
     Chassis_Stop();
     MotorDriver_StopAll();
+    AppOdo_SyncBaseline();
 }
 
 static uint8_t AMR_IsMotionState(AMR_State_t state)

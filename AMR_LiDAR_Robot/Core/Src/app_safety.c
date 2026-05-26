@@ -3,6 +3,7 @@
 #include "amr_system.h"
 #include "app_fault.h"
 #include "app_lidar.h"
+#include "app_odometry.h"
 #include "bringup_log.h"
 #include "chassis.h"
 #include "motor_driver.h"
@@ -115,6 +116,7 @@ void App_Safety_ClearFault(void)
     app_safety_time_skew_warned = 0U;
 
     AppFault_Clear();
+    AppOdo_SyncBaseline();
     APP_LOG("[SAFETY] fault cleared");
 }
 

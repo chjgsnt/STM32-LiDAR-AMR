@@ -35,6 +35,14 @@
 #define APP_ODO_MAX_ANGULAR_STEP_RAD 0.80f
 #endif
 
+#ifndef APP_ODO_MAX_DT_MS
+#define APP_ODO_MAX_DT_MS 80U
+#endif
+
+#ifndef APP_ODO_MIN_DT_MS
+#define APP_ODO_MIN_DT_MS 5U
+#endif
+
 #ifndef APP_ODO_DEBUG_ENABLE
 #define APP_ODO_DEBUG_ENABLE 0
 #endif
@@ -53,6 +61,15 @@ typedef struct
     float y_m;
     float theta_rad;
 } OdomPose_t;
+
+typedef enum
+{
+    APP_ODO_SKIP_NONE = 0,
+    APP_ODO_SKIP_LARGE_STEP,
+    APP_ODO_SKIP_DT_TOO_LARGE,
+    APP_ODO_SKIP_DT_TOO_SMALL,
+    APP_ODO_SKIP_FROZEN
+} AppOdoSkipReason_t;
 
 typedef struct
 {
@@ -75,6 +92,7 @@ typedef struct
     float dt_s;
     uint32_t last_update_ms;
     uint8_t step_skipped;
+    uint8_t skip_reason;
     uint8_t frozen;
 } OdomSample_t;
 
@@ -86,12 +104,14 @@ bool Odom_GetLastSample(OdomSample_t *sample);
 
 void AppOdo_Init(void);
 void AppOdo_Reset(void);
+void AppOdo_SyncBaseline(void);
 void AppOdo_Update(float dt_s);
 void AppOdo_GetPose(float *x, float *y, float *theta);
 void AppOdo_GetVelocity(float *v, float *w);
 void AppOdo_PrintDebug(void);
 void AppOdo_SetFreeze(uint8_t freeze);
 uint8_t AppOdo_IsFrozen(void);
+const char *AppOdo_SkipReasonName(uint8_t reason);
 
 #ifdef __cplusplus
 }

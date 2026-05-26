@@ -117,6 +117,10 @@ Odometry includes a sanity guard for validation: unusually large single-step
 linear or angular encoder deltas are skipped before they can push the pose and
 cell map far outside the maze. The `odom_dbg` and `map_reset` serial commands
 help inspect encoder deltas and recover the 5x5 map during testing.
+The odometry update also guards against low-frequency task delays by skipping
+integration when `dt` is outside the configured range and syncing the encoder
+baseline during stop, ESTOP, and fault-reset paths, preventing accumulated
+encoder deltas from corrupting the pose.
 
 Encoder/odometry diagnostic commands are provided for ground calibration:
 `enc_dbg` prints raw counts, signed deltas, wheel-distance estimates, computed

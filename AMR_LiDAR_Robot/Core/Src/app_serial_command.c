@@ -318,6 +318,7 @@ static void App_SerialCommand_HandleLine(const char *line)
             ReturnExecutor_Stop("serial_stop");
         }
         AMR_RequestStop("serial_stop");
+        AppOdo_SyncBaseline();
     }
     else if (strcmp(line, "return") == 0)
     {
@@ -337,16 +338,19 @@ static void App_SerialCommand_HandleLine(const char *line)
         AppExplorer_Stop();
         ReturnExecutor_Stop("serial_estop");
         AMR_RequestEStop("serial_estop");
+        AppOdo_SyncBaseline();
     }
     else if (strcmp(line, "reset_fault") == 0)
     {
         App_Safety_ClearFault();
         AppExplorer_Reset();
         AMR_RequestResetFault("serial_reset_fault");
+        AppOdo_SyncBaseline();
     }
     else if ((strcmp(line, "odom_reset") == 0) || (strcmp(line, "odo_reset") == 0))
     {
         Odom_Reset();
+        AppOdo_SyncBaseline();
         AppMap_Reset();
     }
     else if ((strcmp(line, "odom_dbg") == 0) || (strcmp(line, "enc_dbg") == 0))
@@ -712,13 +716,14 @@ static void App_SerialCommand_LogStatus(void)
             (int)command.right_duty,
             (long)sample.raw_left_delta,
             (long)sample.raw_right_delta);
-    APP_LOG("[STATUS] odom_dbg ds_mm=%s%lu dth_mrad=%s%lu dt_ms=%lu skipped=%u frozen=%u",
+    APP_LOG("[STATUS] odom_dbg ds_mm=%s%lu dth_mrad=%s%lu dt_ms=%lu skipped=%u reason=%s frozen=%u",
             App_SerialCommand_FixedSign(odom_ds_mm),
             (unsigned long)App_SerialCommand_FixedWhole(odom_ds_mm, 1),
             App_SerialCommand_FixedSign(odom_dtheta_mrad),
             (unsigned long)App_SerialCommand_FixedWhole(odom_dtheta_mrad, 1),
             (unsigned long)App_SerialCommand_FixedWhole(odom_dt_ms, 1),
             (unsigned int)sample.step_skipped,
+            AppOdo_SkipReasonName(sample.skip_reason),
             (unsigned int)AppOdo_IsFrozen());
     APP_LOG("[STATUS] pose x=%s%lu.%03lu y=%s%lu.%03lu th=%s%lu.%01lu odo_frozen=%u",
             App_SerialCommand_FixedSign(x_mm),
