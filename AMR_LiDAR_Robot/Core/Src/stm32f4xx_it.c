@@ -43,6 +43,7 @@
 
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN PV */
+static volatile uint32_t app_hardfault_marker = 0U;
 
 /* USER CODE END PV */
 
@@ -89,6 +90,7 @@ void NMI_Handler(void)
 void HardFault_Handler(void)
 {
   /* USER CODE BEGIN HardFault_IRQn 0 */
+  app_hardfault_marker = 0x48464C54UL; /* "HFLT" for debugger inspection. TODO: persist across reset if needed. */
 
   /* USER CODE END HardFault_IRQn 0 */
   while (1)

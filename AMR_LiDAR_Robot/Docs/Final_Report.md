@@ -1,475 +1,477 @@
-# Final Report: STM32 LiDAR AMR Demo
+# EBU6475 Final Technical Documentation
 
-## Project Summary
+## STM32 NUCLEO-F446RE 2D LiDAR AMR
 
-This project is an STM32F446xx based AMR / smart path-following car built on FreeRTOS. The current final demo path is a LiDAR based obstacle avoidance mode named `LiDARObstacleAvoidance`.
+This report documents the final stable demonstration build of the STM32
+FreeRTOS-based AMR project. The final demo focuses on a reliable embedded
+Sense-Think-Act pipeline: LiDAR front-distance sensing, local obstacle
+avoidance, motor actuation, safe stop behavior, serial telemetry, and
+engineering validation evidence.
 
-The final default mode does not depend on a servo or ultrasonic module. Servo and ultrasonic based demos are kept in the codebase as optional expansion demos, but they are not required for the current hardware demonstration.
+The final demo does not claim complete autonomous Start-to-Exit-to-Return maze
+benchmark completion. Software frameworks for odometry, mapping, and
+exploration have been implemented, but live odometry-map navigation is not
+enabled in the final stable demo because ground testing showed wheel asymmetry,
+slip, and pose instability.
 
-Current verified final behavior:
+## Final Demo Configuration
 
-- Default `active_mode` is `LiDARObstacleAvoidance`.
-- LiDAR UART4 RX starts successfully at `baud=460800`.
-- LiDAR scan descriptor `A5 5A 05 00 00 40 81` is recognized.
-- Scan response type `0x81` is detected.
-- The LiDAR parser reports `valid_points`, `nearest`, `front`, `front_wide`, `left`, and `right` fields.
-- The final state machine can execute:
-  `START_DELAY -> WAIT_LIDAR -> DRIVE_FORWARD -> OBSTACLE_STOP -> BACKUP -> TURN -> RECOVER -> DRIVE_FORWARD`.
-- A front obstacle can trigger:
-  `obstacle detected front_min_mm=xxx`, stop, backup, turn, and `recover forward`.
+| Item | Final demo setting |
+| --- | --- |
+| MCU | STM32 NUCLEO-F446RE |
+| RTOS | FreeRTOS |
+| Active mode | `LiDARObstacleAvoidance` |
+| LiDAR | UART4, 460800 baud |
+| Debug serial | USART2 virtual COM, 115200 8N1 |
+| Odometry integration | Frozen by default, `APP_ODO_FREEZE_DEFAULT=1` |
+| Encoder diagnostics | Enabled through `enc_dbg`, `odom_dbg`, `odo_freeze` |
+| Encoder ticks/rev | Calibrated to `ODO_ENCODER_TICKS_PER_REV=1694` |
+| OLED | Disabled by default due to pin/resource constraints |
+| UI evidence | Serial telemetry through `status` and `tel` |
+| Bluetooth | Not implemented |
+| Map/explorer | Implemented as software framework/skeleton, not final live navigation |
+| Emergency stop | Software ESTOP through command and PC13 long press |
 
-## Actual Hardware Configuration
+## 1. Project Overview and Requirements Interpretation
 
-The project hardware used for the final demo is:
+The project brief requires an embedded mobile robot system that demonstrates a
+Sense-Think-Act pipeline and includes embedded control, sensing, safety,
+interface, and validation evidence. The intended benchmark context is a small
+maze-like environment, but the final deliverable must be technically honest and
+robust under real hardware constraints.
 
-- MCU: STM32F446xx.
-- RTOS: FreeRTOS.
-- Drive base: left/right motor chassis.
-- IMU: MPU6500 on I2C, address `0x68`.
-- IMU identity: `WHO_AM_I = 0x70`.
-- IMU status: pitch and roll logs are available.
-- LiDAR: connected through UART4.
-- LiDAR baud rate: `460800`.
-- Current hardware has no servo installed.
-- Current hardware has no ultrasonic module installed.
-- Digital Logic Analyzer is used only as a debugging tool. It is not part of the sensor or actuator stack.
+The final project interpretation is:
 
-Because the current robot does not include a servo or ultrasonic sensor, the final mainline cannot depend on `ServoScanObstacle` or `NoServoObstacleAvoidance`. Those modules can remain as extension demos or fallback experiments, but they should not be documented as mandatory final-demo hardware.
+- Sense: receive and parse 2D LiDAR scan data, extract front obstacle distance,
+  read wheel encoders, and expose diagnostic telemetry.
+- Think: run an AMR state machine, LiDAR obstacle avoidance state machine,
+  fault/safety checks, and command handling under FreeRTOS.
+- Act: drive the differential chassis through existing chassis/motor layers,
+  execute stop, backup, turn, recover, and safe-stop actions.
+- Validate: provide repeatable serial evidence, encoder calibration output,
+  LiDAR distance logs, state transitions, and safety behavior.
 
-## Bring-Up And Debug Process
+The final demo prioritises reliable obstacle avoidance and safe operation over
+claiming full autonomous maze solving. This is a deliberate engineering choice:
+the robot can demonstrate embedded autonomy and validation evidence without
+depending on unstable live odometry-map navigation.
 
-### Toolchain And Build
+### Requirement vs Implementation Status
 
-The project is built with the STM32CubeCLT / CMake / Ninja / `arm-none-eabi` toolchain flow.
+| Requirement area | Status | Evidence / note |
+| --- | --- | --- |
+| LiDAR sensing | Implemented | UART4 LiDAR parser, front distance, ready/valid status |
+| Motor actuation | Implemented | Chassis commands drive stop, forward, backup, turn |
+| Encoder reading | Implemented | `enc_dbg`/`odom_dbg` report raw/signed deltas and distance |
+| Speed/closed-loop support | Implemented in project | Encoder-based motor control and PI/PID test infrastructure exist |
+| Obstacle avoidance | Implemented and final-demo enabled | `LiDARObstacleAvoidance` stop/backup/turn/recover |
+| AMR state machine | Implemented | IDLE, EXPLORE, AVOID, RETURN, FAULT, ESTOP |
+| Fault manager / safe stop | Implemented | LiDAR timeout, encoder stall, ESTOP safe stop |
+| PC13 user input | Implemented | Long press enters USER_ESTOP; long press in fault clears/reset |
+| Serial telemetry | Implemented and final-demo enabled | `status`, `tel`, command logs |
+| Odometry pose | Implemented, not enabled in final demo navigation | `APP_ODO_FREEZE_DEFAULT=1`, `odo_frozen=1` |
+| Map/explorer | Partially implemented, not enabled in final demo navigation | 5x5 map and DFS/frontier skeleton only |
+| OLED UI | Implemented earlier, not enabled in final demo | Disabled due to pin/resource constraints |
+| Bluetooth | Not implemented | No verified Bluetooth hardware/software integration |
+| Full Start-to-Exit-to-Return | Not claimed | Future work requiring robust odometry/navigation |
 
-The normal Debug build command is:
+## 2. Conceive: Problem Framing, Constraints, and Risks
 
-```powershell
-cmake --build --preset Debug --clean-first
-```
+The original concept was an autonomous mobile robot capable of exploring a
+small maze, avoiding obstacles, and eventually returning to the start. During
+bring-up, the project was reframed around a stable embedded demonstration that
+could be verified repeatedly on the available hardware.
 
-The normal flashing command is:
+### Constraints
 
-```powershell
-STM32_Programmer_CLI -c port=SWD -w build\Debug\AMR_LiDAR_Robot.elf -v -rst
-```
+- Limited STM32 NUCLEO-F446RE pins and communication resources.
+- LiDAR requires a high-speed UART and continuous receive handling.
+- Motor and encoder signals are sensitive to wiring, slip, and wheel mismatch.
+- OLED display was not practical in the final hardware setup due to pin/resource
+  constraints.
+- Bluetooth was not integrated or verified.
+- Odometry was affected by left/right wheel distance mismatch during ground
+  testing.
+- The final demonstration needed to be stable and recoverable under live test
+  conditions.
 
-This flow was used throughout bring-up to verify code changes and flash the STM32 target.
+### Main Risks and Mitigations
 
-### I2C Baseline And Recovery
+| Risk | Impact | Mitigation |
+| --- | --- | --- |
+| LiDAR RX timeout or stale data | Robot could move without valid perception | Safety monitor faults and stops motion |
+| Encoder stall | Motor commanded but wheel not moving | Fault manager detects stall and safe stops |
+| Odometry pose jump | Map cell jumps and navigation becomes unsafe | Default freeze of odometry integration |
+| Serial logging overload | Timing disruption or confusing evidence | Logging reduced and status/tel commands used |
+| UI hardware conflict | OLED unreliable or unavailable | Serial telemetry used as UI evidence |
+| Unstable full navigation | Failed final demo | Focus on verified LiDAR obstacle avoidance |
 
-The I2C baseline test was used to confirm the bus before relying on the IMU.
+The final demo is therefore designed as a conservative AMR baseline: it senses a
+front obstacle, decides a local avoidance action, drives the chassis, and enters
+a safe state when faults occur.
 
-Verified points:
+## 3. Design: Sense-Think-Act Architecture
 
-- I2C1 SCL pin: `PB8`.
-- I2C1 SDA pin: `PB9`.
-- PB8/SCL and PB9/SDA levels were checked during baseline logging.
-- I2C scan found MPU6500 at address `0x68`.
-- MPU6500 `WHO_AM_I` returned `0x70`.
-- I2C recovery support is present in the bring-up flow.
+### System Architecture
 
-OLED was used earlier as one possible I2C verification target. In the current scan result the OLED status is `oled=0`, and the final mainline does not depend on OLED output.
-
-Relevant code areas:
-
-- `Core/Src/freertos.c`
-- `Core/Src/i2c_scan.c`
-- `Core/Inc/mpu6500.h`
-- `Core/Src/ssd1306.c`
-
-### IMU Bring-Up
-
-The MPU6500 IMU bring-up included:
-
-- Wake-up and `WHO_AM_I` verification.
-- Gyro calibration.
-- Raw accelerometer / gyro reading.
-- Pitch and roll reporting through serial logs.
-
-Representative IMU log format from the code:
-
-```text
-APP IMU: ready=1 pitch=...deg roll=...deg
-MPU6500 angle accel: pitch=...deg roll=...deg
-MPU6500 angle fused: pitch=...deg roll=...deg
-```
-
-The IMU is currently used as a verified onboard sensor and debug source. It is a good future candidate for yaw / gyro assisted turning, but the current final obstacle avoidance state machine is still reactive and LiDAR-front-distance based.
-
-### Motor Bring-Up
-
-The motor bring-up completed basic left/right motor control and chassis-level commands.
-
-Verified work:
-
-- Basic PWM motor output.
-- Stop command.
-- Forward command.
-- Backup command.
-- In-place turn command.
-- Left/right duty trim experiments.
-
-The current forward calibration for the final LiDAR demo is approximately:
-
-```text
-left duty  = 498
-right duty = 500
-```
-
-Earlier tests showed that left/right wheel start behavior and duty mismatch could cause the robot to drift. The current `498/500` forward duty was chosen as a practical calibrated value for the final demo.
-
-Relevant code areas:
-
-- `Core/Src/motor_driver.c`
-- `Core/Src/chassis.c`
-- `Core/Src/app_motor_forced_spin_check.c`
-- `Core/Src/app_lidar_obstacle_avoidance.c`
-
-### Early Obstacle Experiments
-
-Early obstacle experiments included basic stop / resume behavior and servo / ultrasonic oriented demo work.
-
-However, the actual final hardware currently has:
-
-- no servo,
-- no ultrasonic module.
-
-Therefore, `ServoScanObstacle` and `NoServoObstacleAvoidance` are not suitable as the final default mode. They are retained only as optional expansion demos or backup implementations.
-
-### LiDAR Bring-Up
-
-LiDAR bring-up reused the existing UART4 based parser instead of replacing the low-level driver.
-
-Verified LiDAR bring-up events:
-
-- `APP LiDAR: uart4 rx started, baud=460800`
-- STOP command sent before scan startup.
-- SCAN command sent.
-- Descriptor observed:
-  `A5 5A 05 00 00 40 81`
-- Descriptor data type:
-  `0x81`
-- Scan response type `0x81` detected.
-- `ready=1` after descriptor detection.
-- `valid_points` increases while scan data is received.
-- Parser reports `nearest`, `front`, `front_wide`, `left`, and `right`.
-
-The parser extracts front-sector distance through `front_min_mm` and marks it valid with `front_valid`. The current parser also reports `front_wide_min_mm`, `left_min_mm`, and `right_min_mm`, which are useful for future direction selection.
-
-Relevant code areas:
-
-- `Core/Src/app_lidar.c`
-- `Core/Inc/app_lidar.h`
-
-### LiDAR Obstacle Stop Check
-
-Before the final state-machine demo, the project first validated a simpler LiDAR stop-check path:
-
-- Read LiDAR front sector.
-- Detect front obstacle distance.
-- Stop motor output when the front obstacle was too close.
-- Resume or hold based on hysteresis / clear logic during earlier experiments.
-
-This phase proved that LiDAR front distance could control motor safety behavior.
-
-Relevant code areas:
-
-- `Core/Src/app_lidar_stop_check.c`
-- `Core/Inc/app_lidar_stop_check.h`
-
-### Final LiDARObstacleAvoidance Demo
-
-The final demo is implemented as `LiDARObstacleAvoidance`.
-
-It uses LiDAR front-sector data and a conservative state machine:
+The system is organised into application modules above the STM32 HAL and
+FreeRTOS task layer.
 
 ```text
-START_DELAY
-WAIT_LIDAR
-DRIVE_FORWARD
-OBSTACLE_STOP
-BACKUP
-TURN
-RECOVER
+Sense:
+  LiDAR UART4 parser
+  Encoder counters
+  PC13 button
+
+Think:
+  AMR state machine
+  LiDAR obstacle avoidance state machine
+  Fault manager / safety monitor
+  Serial command parser
+  Odometry diagnostics
+  Map/explorer software framework
+
+Act:
+  Chassis command layer
+  Motor PWM driver
+  Safe stop / ESTOP paths
+  Serial telemetry output
 ```
 
-Obstacle behavior:
+### FreeRTOS Task Structure
 
-- Wait for startup delay.
-- Wait until LiDAR front data is valid.
-- Drive forward with calibrated motor duty.
-- If `front_min_mm < LIDAR_OBS_STOP_MM`, stop.
-- Backup for a fixed time.
-- Turn for a fixed time.
-- Recover and return to forward driving if LiDAR data is valid.
+The project uses FreeRTOS to separate periodic control, sensing, safety, and UI
+work. The exact task names are generated by the project, but the application
+logic follows these timing roles:
 
-Safety behavior:
+- LiDAR receive/parser handling through UART4 callback and parser update logic.
+- Control-period updates for AMR state, obstacle avoidance, return/explorer
+  framework, odometry sampling, and map update.
+- Safety update at a regular period to check LiDAR RX age and encoder stall.
+- Serial command processing outside interrupt context.
+- UI/telemetry update at low rate to avoid flooding the serial port.
 
-- If LiDAR front data is missing for too long, the robot enters `WAIT_LIDAR`.
-- A single invalid front reading is tolerated to reduce state jitter.
-- Long-term no-data behavior remains fail-safe: the robot stops instead of continuing forward.
+Serial command execution was intentionally moved out of UART interrupt context
+to avoid long `printf` operations inside callbacks.
 
-Relevant code areas:
+### Module Design
 
-- `Core/Src/app_lidar_obstacle_avoidance.c`
-- `Core/Inc/app_lidar_obstacle_avoidance.h`
-- `Core/Src/freertos.c`
-- `Core/Inc/app_test_config.h`
+| Module | Role |
+| --- | --- |
+| `app_lidar` | UART4 LiDAR receive, scan parsing, sector distance extraction |
+| `app_lidar_obstacle_avoidance` | Final enabled local avoidance behavior |
+| `amr_system` | High-level AMR state machine |
+| `app_safety` | Runtime checks for LiDAR timeout and encoder stall |
+| `app_fault` | Latched fault code and safe-stop behavior |
+| `chassis` / `motor_driver` | Chassis-level commands and PWM output |
+| `app_odometry` | Encoder diagnostics, calibration, optional pose integration |
+| `app_map` | 5x5 cell-map software framework |
+| `app_explorer` | DFS/frontier-style exploration skeleton |
+| `app_ui` | Serial UI/telemetry; OLED disabled in final demo |
+| `app_serial_command` | USART2 command parser and status output |
+| `app_button_control` | PC13 long press ESTOP / fault clear behavior |
 
-## Current Final Function Architecture
+## 4. Implement
 
-### Motor Control Module
+### LiDAR Obstacle Avoidance
 
-The motor control layer drives the left and right motors. It supports:
+The final active mode is `LiDARObstacleAvoidance`. It uses LiDAR front-sector
+distance to decide local actions:
 
-- forward output,
-- stop,
+```text
+IDLE -> EXPLORE
+LiDAR clear: DRIVE_FORWARD
+Obstacle close: stop/hold -> BACKUP -> TURN -> RECOVER
+Fault or ESTOP: safe stop
+```
+
+The important evidence is the front distance and state transition log:
+
+```text
+[CMD_RX] line=start
+[AMR] state IDLE -> EXPLORE reason=serial_start
+[OBS] hold reason=front_blocked front=... stop=...
+APP LIDAR_OBS: state=BACKUP reason=obstacle_detected
+APP LIDAR_OBS: state=TURN reason=backup_done
+APP LIDAR_OBS: state=RECOVER ...
+```
+
+This behavior demonstrates perception-driven actuation without requiring global
+SLAM or path planning.
+
+### Motor Control and Actuation
+
+The final demo uses the existing chassis and motor layers rather than writing
+directly to low-level PWM from application code. This keeps motor behavior
+centralised and allows the safe-stop paths to disable outputs consistently.
+
+Implemented motor actions include:
+
+- stop all motor output,
+- drive forward,
 - backup,
-- in-place turn.
+- differential turn,
+- safe stop on FAULT/ESTOP.
 
-The final demo calls chassis-level commands and does not require changes to `motor_driver.c`.
+The project also includes encoder-based control and PI/PID wheel speed test
+infrastructure. For the final demo, the critical evidence is that motor output
+responds to LiDAR obstacle decisions and safe-stop commands.
 
-Main files:
+### Fault Manager and Safe Stop
 
-- `Core/Src/motor_driver.c`
-- `Core/Src/chassis.c`
-- `Core/Inc/chassis.h`
+The fault manager is latched: once a fault is active, the system does not resume
+motion automatically. It must be cleared by command or by the PC13 long-press
+recovery path.
 
-### IMU Module
+Faults supported in the project include:
 
-The IMU module reads MPU6500 data and provides debug orientation information.
+- `FAULT_NONE`
+- `FAULT_LIDAR_TIMEOUT`
+- `FAULT_ENCODER_STALL`
+- `FAULT_PLANNER_STUCK` as a reserved software/planner code
+- `FAULT_USER_ESTOP`
 
-Current status:
+Safe-stop behavior calls the chassis/motor stop path and prevents continued
+motion in FAULT/ESTOP states. This is a software emergency stop, not a hardware
+latched power cut.
 
-- I2C address verified at `0x68`.
-- `WHO_AM_I = 0x70`.
-- Gyro calibration flow is present.
-- Pitch and roll serial logs are available.
+### Serial Telemetry and UI
 
-Main files:
+OLED hardware is disabled in the final build due to pin/resource constraints.
+The UI evidence is serial based:
 
-- `Core/Src/i2c_scan.c`
-- `Core/Inc/mpu6500.h`
-- `Core/Src/freertos.c`
+- `status`: multi-line detailed system state.
+- `tel`: compact telemetry line for video and validation evidence.
+- `ui` / `page`: serial fallback UI page state.
 
-### LiDAR Module
+Expected telemetry includes:
 
-The LiDAR module receives scan data through UART4 and parses the scan response.
+```text
+TEL: mode=IDLE fault=NONE odo_frozen=1 x=... y=... th=... cell=(...) ...
+```
 
-Current status:
+### Odometry Diagnostics
 
-- UART4 RX starts at `460800`.
-- Descriptor and scan response type `0x81` are detected.
-- `valid_points` increases during scanning.
-- Front-sector minimum distance is exposed as `front_min_mm`.
+The odometry module implements differential-drive pose estimation, encoder
+debug sampling, freeze control, and sanity guards. However, final demo pose
+integration is frozen by default:
 
-Main files:
+```text
+APP_ODO_FREEZE_DEFAULT=1
+status/tel -> odo_frozen=1
+```
 
-- `Core/Src/app_lidar.c`
-- `Core/Inc/app_lidar.h`
+This allows encoder evidence to be captured without letting wheel mismatch or
+slip corrupt the live pose/map state.
 
-### Decision / Control State Machine
+Encoder one-revolution calibration was performed:
 
-The final decision logic is the `LiDARObstacleAvoidance` state machine.
-
-States:
-
-- `START_DELAY`
-- `WAIT_LIDAR`
-- `DRIVE_FORWARD`
-- `OBSTACLE_STOP`
-- `BACKUP`
-- `TURN`
-- `RECOVER`
-
-The state machine uses `front_min_mm` and LiDAR validity information to decide when to drive, stop, backup, turn, and recover.
-
-Main files:
-
-- `Core/Src/app_lidar_obstacle_avoidance.c`
-- `Core/Inc/app_lidar_obstacle_avoidance.h`
-
-## Current LiDARObstacleAvoidance Parameters
-
-These values are taken from the current `Core/Src/app_lidar_obstacle_avoidance.c`.
-
-| Parameter | Current value | Meaning |
+| Wheel | Measured one-revolution ticks | Earlier distance estimate symptom |
 | --- | ---: | --- |
-| `LIDAR_OBS_START_DELAY_MS` | `3000` ms | Initial delay before LiDAR-controlled movement |
-| `LIDAR_OBS_FRONT_MIN_MM` | `120` mm | Filters out too-close invalid / unreliable front points |
-| `LIDAR_OBS_STOP_MM` | `400` mm | Front obstacle trigger distance |
-| `LIDAR_OBS_FRONT_TIMEOUT_MS` | `600` ms | Maximum allowed age of valid front LiDAR data |
-| `LIDAR_OBS_FRONT_INVALID_LIMIT` | `3` samples | Consecutive invalid front samples tolerated before WAIT_LIDAR |
-| `LIDAR_OBS_BACKUP_MS` | `450` ms | Backup duration after obstacle stop |
-| `LIDAR_OBS_TURN_MS` | `1000` ms | Turn duration after backup |
-| `LIDAR_OBS_RECOVER_MS` | `200` ms | Recovery pause before driving forward again |
-| `LIDAR_OBS_FORWARD_LEFT_DUTY` | `498` | Left motor forward duty |
-| `LIDAR_OBS_FORWARD_RIGHT_DUTY` | `500` | Right motor forward duty |
-| `LIDAR_OBS_BACKUP_DUTY` | `320` | Backup duty |
-| `LIDAR_OBS_TURN_DUTY` | `360` | In-place turn duty |
+| Left | approximately 1738 ticks | distance was over-scaled before calibration |
+| Right | approximately 1650 ticks | distance was over-scaled before calibration |
+| Average | approximately 1694 ticks/rev | final `ODO_ENCODER_TICKS_PER_REV=1694` |
 
-Tuning notes:
+The earlier value of `ticks_per_rev=390` was not valid for the assembled robot
+and produced approximately 4.2x distance overestimation. The corrected value was
+based on physical wheel rotation testing.
 
-- Increase `LIDAR_OBS_STOP_MM` to stop earlier.
-- Decrease `LIDAR_OBS_STOP_MM` only after controlled ground testing.
-- Increase `LIDAR_OBS_TURN_MS` if the robot recovers and immediately sees the same obstacle again.
-- Adjust `LIDAR_OBS_FORWARD_LEFT_DUTY` and `LIDAR_OBS_FORWARD_RIGHT_DUTY` for straight-line calibration.
-- Increase `LIDAR_OBS_FRONT_INVALID_LIMIT` only if front readings are noisy but LiDAR data is otherwise healthy.
+### Map and Explorer Framework
 
-## Representative Test Log / Serial Verification
+The project includes a 5x5 cell-level map and a DFS/frontier-style explorer
+skeleton. These are useful for future development and demonstrate software
+structure for maze navigation, but they are not used as final live navigation.
 
-The following is a condensed representative log set. It records the important verification events without including every repeated motor or LiDAR status line.
+Final status:
+
+- Implemented: map data structures, visited/wall fields, grid/status commands.
+- Partially implemented: explorer state skeleton and path planning framework.
+- Not enabled in final demo: live odometry-based cell movement and full
+  autonomous Start-to-Exit-to-Return benchmark navigation.
+
+This distinction is important because the final demo does not rely on unstable
+odometry to decide movement through the maze.
+
+## 5. Operate: Validation Tests and Evidence
+
+### Validation Test vs Result
+
+| Test | Method | Result |
+| --- | --- | --- |
+| LiDAR front distance | Move object in front of LiDAR and read `status`/logs | Front distance changes and valid flag reports correctly |
+| Obstacle response | Send `start`, place obstacle within threshold | Robot stops/backs up/turns/recovers |
+| Serial start/stop | Send `start`, then `stop` | State changes IDLE -> EXPLORE -> IDLE, motor output stops |
+| PC13 USER_ESTOP | Long press PC13 for about 2 seconds | `FAULT_USER_ESTOP` / ESTOP safe stop triggered |
+| Fault clear | Long press PC13 in FAULT/ESTOP | Fault cleared, odometry/map reset path executed |
+| Encoder calibration | Rotate each wheel one revolution | Left about 1738 ticks, right about 1650 ticks |
+| Odometry freeze | Boot and run `status`/`tel` | `odo_frozen=1`, pose integration disabled |
+| Encoder diagnostics | Run `enc_dbg` / `odom_dbg` | Raw/signed deltas and distance estimates reported |
+| Serial telemetry | Run `status` and `tel` | Detailed and compact evidence available |
+| Map/explorer commands | Run `map`, `grid`, `exp` | Framework status prints, not used for final navigation |
+
+### Representative Evidence
+
+Expected stable-demo log evidence:
 
 ```text
 [APP] active_mode=LiDARObstacleAvoidance
-[APP] active_test=LiDARObstacleAvoidance
-[APP] LiDARObstacleAvoidance: lidar parser task active
-[APP] lidar obstacle avoidance enabled
-
-APP LiDAR: uart4 rx started, baud=460800
-APP LiDAR: send STOP cmd
-APP LiDAR: send SCAN cmd
-APP LiDAR: descriptor=A5 5A 05 00 00 40 81 data_type=0x81
-APP LiDAR: scan response type 0x81 detected
-APP LiDAR: ready=1 rx=... type=0x81 valid=... nearest=... front=... front_wide=... left=... right=...
-
-APP LIDAR_OBS: state=START_DELAY reason=init
-APP LIDAR_OBS: state=WAIT_LIDAR reason=start_delay_done
-APP LIDAR_OBS: state=DRIVE_FORWARD reason=lidar_ready
-APP LIDAR_OBS: front_min_mm=xxx valid_points=xxx
-
-APP LIDAR_OBS: obstacle detected front_min_mm=xxx valid_points=xxx
-APP LIDAR_OBS: state=OBSTACLE_STOP reason=obstacle_detected
-APP LIDAR_OBS: state=BACKUP reason=stop_done
-APP LIDAR_OBS: state=TURN reason=backup_done
-APP LIDAR_OBS: state=RECOVER reason=turn_done
-APP LIDAR_OBS: recover forward
-APP LIDAR_OBS: state=DRIVE_FORWARD reason=recover_forward
+ODO: init ... ticks_per_rev=1694 ... freeze=1
+[STATUS] state=IDLE fault=NONE
+[STATUS] lidar ready=1 front=...
+[STATUS] pose ... odo_frozen=1
+TEL: mode=IDLE fault=NONE odo_frozen=1 ...
+[CMD_RX] line=start
+[AMR] state IDLE -> EXPLORE reason=serial_start
+APP LIDAR_OBS: start called ...
+[OBS] hold reason=front_blocked front=... stop=...
+APP LIDAR_OBS: state=BACKUP reason=obstacle_detected
+APP LIDAR_OBS: state=TURN reason=backup_done ...
+APP LIDAR_OBS: state=RECOVER ...
+[CMD_RX] line=enc_dbg
+ODO_DBG: frozen=1 cntL=... cntR=...
+ODO_DBG: total rawL=... rawR=... signedL=... signedR=...
+[CMD_RX] line=stop
+[AMR] state EXPLORE -> IDLE reason=serial_stop
+[BTN] long_press
+FAULT: code=USER_ESTOP
+FAULT: safe stop
+[ESTOP] motor outputs disabled
 ```
 
-If the front sector temporarily has no valid point, the current code tolerates several invalid samples. If front data remains invalid or times out, the expected safety behavior is:
+This evidence demonstrates that the final build can sense obstacles, make a
+reactive local decision, actuate the chassis, report telemetry, and enter a safe
+state when commanded.
 
-```text
-APP LIDAR_OBS: lidar_no_valid_front_distance invalid_count=3 front_age_ms=...
-APP LIDAR_OBS: state=WAIT_LIDAR reason=lidar_no_valid_front_distance
-```
+## 6. Engineering Trade-offs and Limitations
 
-## Why The Final Version Uses LiDAR Instead Of Ultrasonic/Servo
+The final demo intentionally favours a reliable, verifiable embedded behavior
+over an over-ambitious navigation claim.
 
-The final version uses LiDAR because it matches both the actual hardware and the project theme.
+### Implemented and Enabled in Final Demo
 
-Key reasons:
+- LiDAR obstacle detection.
+- Local obstacle avoidance: stop, backup, turn, recover.
+- AMR state transitions.
+- Motor actuation through chassis layer.
+- Fault manager and safe stop.
+- PC13 long-press USER_ESTOP and fault-clear/reset behavior.
+- Serial command interface and telemetry.
+- Encoder calibration diagnostics.
 
-- The current project hardware does not include a servo.
-- The current project hardware does not include an ultrasonic module.
-- `ServoScanObstacle` depends on servo plus ultrasonic hardware.
-- `NoServoObstacleAvoidance` depends on ultrasonic hardware.
-- LiDAR is physically connected and already outputs valid scan data.
-- LiDAR UART4 RX, descriptor parsing, scan response type `0x81`, and zone distance extraction have been verified.
-- A LiDAR based demo better matches the AMR / intelligent path-following robot goal.
+### Implemented but Not Enabled as Final Navigation
 
-Conclusion:
+- Odometry pose integration.
+- 5x5 cell map.
+- DFS/frontier-style explorer skeleton.
+- Recorded-action/path framework.
 
-- `LiDARObstacleAvoidance` is the final default mainline demo mode.
-- Servo / ultrasonic code is retained only as optional expansion demo code or backup experiment code.
-- The final report should not present servo or ultrasonic hardware as required for the current final demo.
+These features remain useful software foundations but are not presented as
+validated live navigation in the final demo.
 
-## Test Method
+### Not Implemented or Not Verified
 
-### Build
+- Full scan matching or ICP.
+- Full A* or DWA maze navigation.
+- Verified Bluetooth telemetry/control.
+- OLED hardware display in the final build.
+- Hardware latched emergency stop or motor power cut.
+- Low-voltage protection.
 
-Run from the project root:
+### Rationale for Freezing Odometry
 
-```powershell
-cmake --build --preset Debug --clean-first
-```
+Ground testing showed large left/right wheel distance mismatch during forward
+motion, for example `dl_mm=121` and `dr_mm=386`. Even after one-revolution tick
+calibration became reasonable, wheel asymmetry and slip could still produce
+heading drift and map cell jumps. To protect the final demo from unstable pose
+integration:
 
-Expected result:
+- odometry integration is frozen by default,
+- encoder sampling and diagnostics remain active,
+- map updates are skipped while odometry is frozen,
+- `odo_freeze 0` remains available for controlled experiments.
 
-- Build completes.
-- `build\Debug\AMR_LiDAR_Robot.elf` is generated.
+This is a practical engineering trade-off that preserves reliable LiDAR
+obstacle avoidance and safety demonstration.
 
-### Flash
+## 7. Responsible GenAI Use
 
-Run from the project root:
+Generative AI was used as an engineering assistant for structuring modules,
+debugging hypotheses, and drafting code/documentation changes. It was not used
+as an unverified source of truth.
 
-```powershell
-STM32_Programmer_CLI -c port=SWD -w build\Debug\AMR_LiDAR_Robot.elf -v -rst
-```
+### Useful GenAI Output Example
 
-Expected result:
+GenAI helped structure the odometry, fault manager, map framework, serial
+command handling, and diagnostic test flow. For example, it suggested separating
+fault handling into a latched fault manager, adding `enc_dbg`/`odom_dbg`
+diagnostics, and documenting validation evidence through serial telemetry. These
+suggestions were useful because they matched embedded software engineering
+practice and were verified by builds and hardware logs.
 
-- Programming succeeds.
-- Verify succeeds.
-- Target resets.
+### Misleading or Unhelpful Output Example
 
-### Serial Observation
+An early odometry assumption used `ticks_per_rev=390`. Hardware calibration
+showed this was not valid for the assembled robot: one wheel revolution measured
+approximately 1738 ticks on the left and 1650 ticks on the right. The incorrect
+assumption caused distance overestimation by about 4.2x and had to be corrected
+through a physical one-revolution wheel test. The final value was set to the
+measured average, `ODO_ENCODER_TICKS_PER_REV=1694`.
 
-Check these items on the serial log:
+### Verification Approach
 
-- `active_mode=LiDARObstacleAvoidance`.
-- `active_test=LiDARObstacleAvoidance`.
-- `APP LiDAR: uart4 rx started, baud=460800`.
-- `APP LiDAR: scan response type 0x81 detected`.
-- `ready=1`.
-- `valid_points` increases.
-- `front_min_mm` appears and changes reasonably when objects move in front of the robot.
-- The LiDAR obstacle state machine reaches `DRIVE_FORWARD`.
+All AI-assisted changes were checked through:
 
-### Lifted-Wheel Test
+- clean CMake builds,
+- serial boot logs,
+- LiDAR ready/front-distance logs,
+- state transition logs,
+- encoder diagnostic logs,
+- motor safe-stop observations,
+- deliberate fault/ESTOP tests.
 
-Before ground testing, lift the wheels off the table or ground.
+AI output was treated as a draft or hypothesis. Hardware evidence and build
+results determined the final implementation decisions.
 
-Check:
+## 8. Reflection and Future Work
 
-- Startup remains stopped during `START_DELAY`.
-- The robot enters `WAIT_LIDAR` until LiDAR front data is valid.
-- The robot enters `DRIVE_FORWARD` when front data is valid.
-- Placing an obstacle in front of the LiDAR triggers `OBSTACLE_STOP`.
-- The state machine proceeds through `BACKUP`, `TURN`, and `RECOVER`.
+The project reached a stable embedded AMR demonstration, but several areas
+remain open for future development.
 
-### Ground Test
+### Reflection
 
-Use a low-risk obstacle such as a cardboard box or backpack.
+The most important lesson was that an embedded robotics demo must be designed
+around hardware evidence, not only planned algorithms. LiDAR obstacle avoidance
+proved stable and demonstrable. In contrast, live odometry-map navigation was
+not stable enough for the final demo because wheel mismatch and slip created
+pose errors. Freezing odometry integration while keeping diagnostics available
+was a reasonable final engineering compromise.
 
-Recommended precautions:
+The project also showed the value of clear diagnostic commands. `status`, `tel`,
+`enc_dbg`, and `odom_dbg` made it possible to separate LiDAR, motor, encoder,
+odometry, and safety problems during testing.
 
-- Do not use a wall for the first ground test.
-- Keep a hand ready to disconnect power.
-- Start with a short open area.
-- Watch both the robot motion and the serial log.
+### Future Work
 
-Pass criteria:
+- Improve wheel calibration and left/right closed-loop balance.
+- Characterise wheel slip under real floor conditions.
+- Re-enable live odometry after slip compensation and speed balance are stable.
+- Add IMU yaw fusion to reduce heading drift.
+- Implement robust cell navigation using the existing 5x5 map framework.
+- Add frontier selection and later A* path planning.
+- Add Bluetooth telemetry/control if spare UART/pins are available.
+- Revisit OLED or an alternative UI only if resources permit.
+- Add a hardware latched emergency stop that cuts motor power.
+- Add low-voltage monitoring and protection.
 
-- With no obstacle, the robot drives forward.
-- A front obstacle around 30-40 cm can trigger stop behavior.
-- The robot stops, backs up, turns, recovers, and resumes forward movement.
-- The robot does not stay in `WAIT_LIDAR` for a long time when LiDAR scan data is healthy.
+## Final Conclusion
 
-## Known Issues And Future Improvements
+The final stable build demonstrates a conservative but credible embedded AMR
+pipeline. It uses LiDAR to detect front obstacles, makes local avoidance
+decisions, actuates the chassis, reports serial telemetry, and enters safe-stop
+states through fault handling and PC13 USER_ESTOP.
 
-Known issues:
-
-- `MOTOR setA/setB` logs are currently frequent and may hide key LiDAR / state-machine logs. Future work should add log rate limiting or duty-change-only printing.
-- The LiDAR front sector can occasionally have no valid points. The current code adds `LIDAR_OBS_FRONT_INVALID_LIMIT=3` and `LIDAR_OBS_FRONT_TIMEOUT_MS=600` as a safety and jitter-reduction mechanism.
-- After recovery, if `front_min_mm` is still below the stop threshold, the robot may trigger obstacle avoidance again. This is safe behavior, but it can be improved by tuning `LIDAR_OBS_TURN_MS` or using a better turn decision.
-- The current final demo is reactive obstacle avoidance. It is not SLAM, global navigation, or full path planning.
-
-Future improvements:
-
-- Compare left and right LiDAR sectors and choose the more open turn direction.
-- Use IMU yaw / gyro integration for fixed-angle turns.
-- Add a simple local occupancy grid or local path scoring.
-- Rate-limit motor logs.
-- Move key demo parameters into a dedicated documented configuration block.
-- Record a ground demo video or photo set for final presentation evidence.
-- Add a concise test log archive after each stable demo run.
-
-## Current Final Conclusion
-
-The project has reached a stable final-demo stage based on `LiDARObstacleAvoidance`.
-
-The main achievement is that the robot can use LiDAR front-sector distance to detect an obstacle, stop, backup, turn, recover, and continue driving without relying on unavailable servo or ultrasonic hardware.
-
-This is a conservative and demonstrable AMR obstacle avoidance baseline. It is intentionally not documented as SLAM or full autonomous navigation. The next natural step is to improve the turn decision by using LiDAR left/right sector comparison and, later, IMU-assisted turn angle control.
+The project includes odometry, map, and explorer software frameworks, but these
+are explicitly separated from the final enabled demo because live odometry-based
+navigation was not stable enough for reliable presentation. This distinction
+keeps the final documentation technically accurate while still showing a clear
+path for future expansion toward full maze navigation.

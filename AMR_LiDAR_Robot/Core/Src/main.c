@@ -56,11 +56,32 @@
 void SystemClock_Config(void);
 void MX_FREERTOS_Init(void);
 /* USER CODE BEGIN PFP */
+static void App_LogResetCause(void);
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+static void App_LogResetCause(void)
+{
+  uint8_t pin_reset = (__HAL_RCC_GET_FLAG(RCC_FLAG_PINRST) != RESET) ? 1U : 0U;
+  uint8_t por_reset = (__HAL_RCC_GET_FLAG(RCC_FLAG_PORRST) != RESET) ? 1U : 0U;
+  uint8_t bor_reset = (__HAL_RCC_GET_FLAG(RCC_FLAG_BORRST) != RESET) ? 1U : 0U;
+  uint8_t sw_reset = (__HAL_RCC_GET_FLAG(RCC_FLAG_SFTRST) != RESET) ? 1U : 0U;
+  uint8_t iwdg_reset = (__HAL_RCC_GET_FLAG(RCC_FLAG_IWDGRST) != RESET) ? 1U : 0U;
+  uint8_t wwdg_reset = (__HAL_RCC_GET_FLAG(RCC_FLAG_WWDGRST) != RESET) ? 1U : 0U;
+  uint8_t lpwr_reset = (__HAL_RCC_GET_FLAG(RCC_FLAG_LPWRRST) != RESET) ? 1U : 0U;
+
+  LOG_INFO("[RESET] flags pin=%u por=%u bor=%u sw=%u iwdg=%u wwdg=%u lpwr=%u",
+           (unsigned int)pin_reset,
+           (unsigned int)por_reset,
+           (unsigned int)bor_reset,
+           (unsigned int)sw_reset,
+           (unsigned int)iwdg_reset,
+           (unsigned int)wwdg_reset,
+           (unsigned int)lpwr_reset);
+  __HAL_RCC_CLEAR_RESET_FLAGS();
+}
 
 /* USER CODE END 0 */
 
@@ -103,6 +124,7 @@ int main(void)
   MX_UART4_Init();
   /* USER CODE BEGIN 2 */
   LOG_INFO("System start!");
+  App_LogResetCause();
 
   /* USER CODE END 2 */
 

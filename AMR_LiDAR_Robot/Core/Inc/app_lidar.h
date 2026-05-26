@@ -24,13 +24,18 @@ typedef struct
     uint8_t right_valid;
     float nearest_angle_deg;
     uint16_t nearest_distance_mm;
+    uint32_t last_rx_tick_ms;
+    uint32_t last_valid_update_ms;
     uint32_t last_update_ms;
+    uint32_t uart4_error_count;
+    uint32_t uart4_error_code;
 } AppLidarStatus;
 
 /*
  * front/front_wide/left/right distance fields use 0xFFFF when the corresponding valid flag is 0.
  * nearest_distance_mm also uses 0xFFFF when no nearest reliable point was observed.
- * last_update_ms is the HAL tick when the parser last accepted a valid scan distance node.
+ * last_rx_tick_ms is the HAL tick when UART4 last received any byte.
+ * last_valid_update_ms and last_update_ms are the HAL tick when the parser last accepted a valid scan distance node.
  * The returned pointer is owned by app_lidar and is updated by App_Lidar_Task().
  */
 const AppLidarStatus *App_Lidar_GetStatus(void);

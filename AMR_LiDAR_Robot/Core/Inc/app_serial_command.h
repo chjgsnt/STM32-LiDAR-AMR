@@ -8,6 +8,7 @@ extern "C" {
 #endif
 
 void App_SerialCommand_Init(void);
+void App_SerialCommand_Process(void);
 void App_SerialCommand_Task(void);
 void App_SerialCommand_RxCpltCallback(UART_HandleTypeDef *huart);
 
