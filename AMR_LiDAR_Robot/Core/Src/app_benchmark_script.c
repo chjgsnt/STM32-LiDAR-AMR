@@ -31,17 +31,17 @@ typedef struct
 } BenchmarkScriptDef_t;
 
 static const BenchmarkScriptStep_t exit_script_steps[] = {
-    {SCRIPT_ACT_FORWARD, 450, 900U, "exit forward 1"},
-    {SCRIPT_ACT_TURN_RIGHT, 330, 650U, "exit right turn"},
-    {SCRIPT_ACT_FORWARD, 450, 900U, "exit forward 2"},
+    {SCRIPT_ACT_FORWARD, 520, 900U, "exit forward 1"},
+    {SCRIPT_ACT_TURN_RIGHT, 420, 650U, "exit right turn"},
+    {SCRIPT_ACT_FORWARD, 520, 900U, "exit forward 2"},
     {SCRIPT_ACT_STOP, 0, 200U, "exit stop"},
 };
 
 static const BenchmarkScriptStep_t return_script_steps[] = {
-    {SCRIPT_ACT_TURN_RIGHT, 330, 1300U, "return turn around"},
-    {SCRIPT_ACT_FORWARD, 450, 900U, "return forward 1"},
-    {SCRIPT_ACT_TURN_LEFT, 330, 650U, "return left turn"},
-    {SCRIPT_ACT_FORWARD, 450, 900U, "return forward 2"},
+    {SCRIPT_ACT_TURN_RIGHT, 420, 1300U, "return turn around"},
+    {SCRIPT_ACT_FORWARD, 520, 900U, "return forward 1"},
+    {SCRIPT_ACT_TURN_LEFT, 420, 650U, "return left turn"},
+    {SCRIPT_ACT_FORWARD, 520, 900U, "return forward 2"},
     {SCRIPT_ACT_STOP, 0, 200U, "return stop"},
 };
 

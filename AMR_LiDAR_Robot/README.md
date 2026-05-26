@@ -266,15 +266,15 @@ Safety:
 Experimental benchmark script mode:
 
 - `script_exit` default steps:
-  - forward duty 450 for 900 ms,
-  - turn right duty 330 for 650 ms,
-  - forward duty 450 for 900 ms,
+  - forward duty 520 for 900 ms,
+  - turn right duty 420 for 650 ms,
+  - forward duty 520 for 900 ms,
   - stop for 200 ms.
 - `script_return` default steps:
-  - turn right duty 330 for 1300 ms,
-  - forward duty 450 for 900 ms,
-  - turn left duty 330 for 650 ms,
-  - forward duty 450 for 900 ms,
+  - turn right duty 420 for 1300 ms,
+  - forward duty 520 for 900 ms,
+  - turn left duty 420 for 650 ms,
+  - forward duty 520 for 900 ms,
   - stop for 200 ms.
 - The scripts are experimental and time-based. Tune duty and duration in
   `Core/Src/app_benchmark_script.c` for a specific 5x5 maze layout.
