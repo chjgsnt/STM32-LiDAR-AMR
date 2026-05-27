@@ -25,11 +25,11 @@
 #define AUTO_OBSTACLE_STOP_MM 360U
 #define AUTO_OBSTACLE_CLEAR_MM 520U
 #define ROUTE_MAX_TOKENS 64U
-#define ROUTE_MAX_STEPS (ROUTE_MAX_TOKENS * 3U)
+#define ROUTE_MAX_STEPS ROUTE_MAX_TOKENS
 #define ROUTE_FORWARD_MS 2000U
 #define ROUTE_HALF_FORWARD_MS 1000U
-#define ROUTE_TURN_LEFT_MS 550U
-#define ROUTE_TURN_RIGHT_MS 550U
+#define ROUTE_TURN_LEFT_MS 600U
+#define ROUTE_TURN_RIGHT_MS 600U
 #define ROUTE_WAIT_MS 200U
 #define ROUTE_STOP_MS 200U
 #define ROUTE_TEXT_MAX (ROUTE_MAX_TOKENS * 2U)
@@ -45,10 +45,7 @@ typedef enum
 
 typedef enum
 {
-    ROUTE_PHASE_SINGLE = 0,
-    ROUTE_PHASE_PRE_HALF,
-    ROUTE_PHASE_TURN,
-    ROUTE_PHASE_POST_HALF
+    ROUTE_PHASE_SINGLE = 0
 } ManualRoutePhase_t;
 
 typedef struct
@@ -345,7 +342,7 @@ void AppBenchmarkScript_StartRouteExit(void)
         return;
     }
 
-    APP_LOG("ROUTE: run_exit raw_count=%u expanded_count=%u centered_turn=enabled",
+    APP_LOG("ROUTE: run_exit raw_count=%u step_count=%u centered_turn=manual",
             (unsigned int)route_exit_token_count,
             (unsigned int)route_exit_script.count);
     AppBenchmarkScript_Start(&route_exit_script);
@@ -359,7 +356,7 @@ void AppBenchmarkScript_StartRouteReturn(void)
         return;
     }
 
-    APP_LOG("ROUTE: run_return raw_count=%u expanded_count=%u centered_turn=enabled",
+    APP_LOG("ROUTE: run_return raw_count=%u step_count=%u centered_turn=manual",
             (unsigned int)route_return_token_count,
             (unsigned int)route_return_script.count);
     AppBenchmarkScript_Start(&route_return_script);
@@ -462,15 +459,15 @@ void AppBenchmarkScript_PrintRouteStatus(void)
         }
     }
 
-    APP_LOG("ROUTE: exit raw_count=%u expanded_count=%u tokens=%s centered_turn=enabled",
+    APP_LOG("ROUTE: exit raw_count=%u step_count=%u tokens=%s centered_turn=manual",
             (unsigned int)route_exit_token_count,
             (unsigned int)route_exit_script.count,
             exit_text);
-    APP_LOG("ROUTE: return raw_count=%u expanded_count=%u tokens=%s centered_turn=enabled",
+    APP_LOG("ROUTE: return raw_count=%u step_count=%u tokens=%s centered_turn=manual",
             (unsigned int)route_return_token_count,
             (unsigned int)route_return_script.count,
             return_text);
-    APP_LOG("ROUTE: status state=%s route=%s index=%u/%u raw_index=%u/%u token=%c action=%s phase=%s elapsed=%lums remaining=%lums centered_turn=enabled",
+    APP_LOG("ROUTE: status state=%s route=%s index=%u/%u raw_index=%u/%u token=%c action=%s phase=%s elapsed=%lums remaining=%lums centered_turn=manual",
             AppBenchmarkScript_StateName(script_state),
             route_name,
             (unsigned int)display_index,
@@ -1516,7 +1513,7 @@ static uint8_t AppBenchmarkScript_SetRoute(ManualRouteSlot_t slot, const char *t
     target_script->count = expanded_count;
     *target_token_count = parsed_count;
 
-    APP_LOG("ROUTE: set_%s raw_count=%u expanded_count=%u max_tokens=%u max_steps=%u centered_turn=enabled F=%ums H=%ums L=%ums R=%ums U=%ums turn_duty=%d stop=%ums",
+    APP_LOG("ROUTE: set_%s raw_count=%u step_count=%u max_tokens=%u max_steps=%u centered_turn=manual F=%ums H=%ums L=%ums R=%ums U=%ums turn_duty=%d stop=%ums",
             target_name,
             (unsigned int)parsed_count,
             (unsigned int)expanded_count,
@@ -1548,36 +1545,6 @@ static uint8_t AppBenchmarkScript_AddRouteExpandedToken(char token,
     if ((normalized >= 'A') && (normalized <= 'Z'))
     {
         normalized = (char)(normalized + ('a' - 'A'));
-    }
-
-    if ((normalized == 'l') || (normalized == 'r'))
-    {
-        if (AppBenchmarkScript_AddRoutePhase(normalized,
-                                             ROUTE_PHASE_PRE_HALF,
-                                             raw_index,
-                                             steps,
-                                             meta,
-                                             expanded_count) == 0U)
-        {
-            return 0U;
-        }
-
-        if (AppBenchmarkScript_AddRoutePhase(normalized,
-                                             ROUTE_PHASE_TURN,
-                                             raw_index,
-                                             steps,
-                                             meta,
-                                             expanded_count) == 0U)
-        {
-            return 0U;
-        }
-
-        return AppBenchmarkScript_AddRoutePhase(normalized,
-                                                ROUTE_PHASE_POST_HALF,
-                                                raw_index,
-                                                steps,
-                                                meta,
-                                                expanded_count);
     }
 
     return AppBenchmarkScript_AddRoutePhase(normalized,
@@ -1651,9 +1618,7 @@ static uint8_t AppBenchmarkScript_RouteTokenToStep(char token,
             return 1U;
 
         case 'h':
-            if ((phase != ROUTE_PHASE_SINGLE) &&
-                (phase != ROUTE_PHASE_PRE_HALF) &&
-                (phase != ROUTE_PHASE_POST_HALF))
+            if (phase != ROUTE_PHASE_SINGLE)
             {
                 return 0U;
             }
@@ -1665,17 +1630,7 @@ static uint8_t AppBenchmarkScript_RouteTokenToStep(char token,
             return 1U;
 
         case 'l':
-            if (phase == ROUTE_PHASE_PRE_HALF)
-            {
-                return AppBenchmarkScript_RouteTokenToStep('h', phase, step);
-            }
-
-            if (phase == ROUTE_PHASE_POST_HALF)
-            {
-                return AppBenchmarkScript_RouteTokenToStep('h', phase, step);
-            }
-
-            if (phase != ROUTE_PHASE_TURN)
+            if (phase != ROUTE_PHASE_SINGLE)
             {
                 return 0U;
             }
@@ -1687,17 +1642,7 @@ static uint8_t AppBenchmarkScript_RouteTokenToStep(char token,
             return 1U;
 
         case 'r':
-            if (phase == ROUTE_PHASE_PRE_HALF)
-            {
-                return AppBenchmarkScript_RouteTokenToStep('h', phase, step);
-            }
-
-            if (phase == ROUTE_PHASE_POST_HALF)
-            {
-                return AppBenchmarkScript_RouteTokenToStep('h', phase, step);
-            }
-
-            if (phase != ROUTE_PHASE_TURN)
+            if (phase != ROUTE_PHASE_SINGLE)
             {
                 return 0U;
             }
@@ -1831,12 +1776,6 @@ static const char *AppBenchmarkScript_RoutePhaseName(ManualRoutePhase_t phase)
     {
         case ROUTE_PHASE_SINGLE:
             return "single";
-        case ROUTE_PHASE_PRE_HALF:
-            return "pre_half";
-        case ROUTE_PHASE_TURN:
-            return "turn";
-        case ROUTE_PHASE_POST_HALF:
-            return "post_half";
         default:
             return "unknown";
     }
@@ -1854,9 +1793,9 @@ static const char *AppBenchmarkScript_RouteExpandedName(char token)
     switch (normalized)
     {
         case 'l':
-            return "H,L,H";
+            return "L";
         case 'r':
-            return "H,R,H";
+            return "R";
         case 'f':
             return "F";
         case 'h':
@@ -1881,7 +1820,7 @@ static void AppBenchmarkScript_LogRouteStepStart(const BenchmarkScriptStep_t *st
         return;
     }
 
-    APP_LOG("ROUTE: token=%c expanded=%s phase=%s action=%s dur=%lums",
+    APP_LOG("ROUTE: token=%c step_token=%s phase=%s action=%s dur=%lums",
             (char)(meta->token - ('a' - 'A')),
             AppBenchmarkScript_RouteExpandedName(meta->token),
             AppBenchmarkScript_RoutePhaseName(meta->phase),

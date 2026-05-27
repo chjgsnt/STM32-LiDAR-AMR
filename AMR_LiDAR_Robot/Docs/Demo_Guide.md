@@ -283,15 +283,12 @@ Manual route script fallback:
   - `F`: trim left=498/right=500 for `2000 ms`, approximately one 70 cm cell.
   - `H`: trim left=498/right=500 for `1000 ms`, approximately one half cell
     and useful for turning around cell centers.
-  - `L`: centered left turn, expanded internally as `H,L,H`; the turn phase
-    uses duty 420 for `550 ms`.
-  - `R`: centered right turn, expanded internally as `H,R,H`; the turn phase
-    uses duty 420 for `550 ms`.
+  - `L`: in-place left 90-degree turn at duty 420 for `600 ms`.
+  - `R`: in-place right 90-degree turn at duty 420 for `600 ms`.
   - `U`: duty 420 for `1900 ms`.
   - `W`: stop for `200 ms`.
   - `S`: stop for `200 ms`.
-  - Do not manually type `H,R,H` or `H,L,H` around `R`/`L` unless extra
-    half-cell movement is intentional.
+  - Use `H,R,H` or `H,L,H` manually when a centered turn is required.
 - Example Start-to-Exit:
   - `route_set_exit F,R,F,L,F`
   - PC13 short press runs the exit route if it is set.
@@ -306,8 +303,8 @@ Manual route script fallback:
 - During route playback, `route_stop`, `script_stop`, fault, ESTOP, or PC13
   short press stops the chassis. PC13 long press still triggers USER_ESTOP.
 - Use `route_status` to inspect saved tokens, current route state, token index,
-  original token, expanded phase, current action, elapsed time, and remaining
-  time. Status output reports `centered_turn=enabled`.
+  original token, route phase, current action, elapsed time, and remaining
+  time. Status output reports `centered_turn=manual`.
 
 Benchmark forward calibration:
 
