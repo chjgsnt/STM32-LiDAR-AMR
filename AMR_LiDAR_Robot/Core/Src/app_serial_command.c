@@ -413,11 +413,11 @@ static void App_SerialCommand_HandleLine(const char *line)
     }
     else if (strcmp(line, "route_run_exit") == 0)
     {
-        AppBenchmarkScript_StartRouteExit();
+        AppBenchmarkRoute_RunExit();
     }
     else if (strcmp(line, "route_run_return") == 0)
     {
-        AppBenchmarkScript_StartRouteReturn();
+        AppBenchmarkRoute_RunReturn();
     }
     else if (strcmp(line, "route_status") == 0)
     {
@@ -429,7 +429,7 @@ static void App_SerialCommand_HandleLine(const char *line)
     }
     else if (strcmp(line, "route_stop") == 0)
     {
-        AppBenchmarkScript_Stop("serial_route_stop");
+        AppBenchmarkRoute_Stop("serial_route_stop");
     }
     else if (App_SerialCommand_ParseBenchFwdCommand(line, &bench_duration_ms) != 0U)
     {

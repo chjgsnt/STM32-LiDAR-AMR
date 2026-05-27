@@ -246,18 +246,21 @@ Experimental `script_return_auto` reactive mode:
 
 PC13 button behavior on the `exp/benchmark-script` branch:
 
-- Short press 1 in IDLE starts `script_auto` reactive exploration.
-- Short press 2 while `script_auto` is running stops auto and arms return.
-- Short press 3 in IDLE starts `script_return_auto`.
-- Short press 4 while `script_return_auto` is running stops return and resets
-  the button flow to auto.
+- If an exit manual route has been set, short press in IDLE starts
+  `route_exit`.
+- Short press while `route_exit` is running stops the route and arms return.
+- If a return manual route has been set and return is armed, the next short
+  press in IDLE starts `route_return`.
+- Short press while `route_return` is running stops the route and resets the
+  button flow to auto/exit.
+- If no manual route is set for the current button phase, the existing
+  `script_auto` / `script_return_auto` fallback flow is used.
 - Short press in non-IDLE non-script states requests stop.
 - Short press in FAULT/ESTOP is ignored; use long press to recover.
 - Long press while running still triggers USER_ESTOP.
 - Long press in FAULT/ESTOP clears fault and resets odometry/map.
-- Exit detection is manual by PC13 short press; `script_return_auto` starts
-  with a timed 180-degree turn-around and then continues reactive return
-  exploration, but it is not guaranteed map-based return-to-start.
+- Exit detection and return arming are manual by PC13 short press; route and
+  reactive fallback modes are not guaranteed map-based return-to-start.
 
 Safety behavior:
 
@@ -273,27 +276,38 @@ Manual route script fallback:
 - Use this only as an experimental benchmark fallback after observing the 5x5
   maze layout on acceptance day.
 - Maximum route token count is `64`.
-- Tokens are `F` forward one cell, `L` left 90 degrees, `R` right 90 degrees,
-  `U` turn around 180 degrees, `W` short wait, and `S` stop.
+- Tokens are `F` forward one 70 cm cell, `H` forward half cell, `L` left 90
+  degrees, `R` right 90 degrees, `U` turn around 180 degrees, `W` short wait,
+  and `S` stop.
 - Current timing parameters:
-  - `F`: trim left=498/right=500 for `900 ms`.
-  - `L`: duty 420 for `550 ms`.
-  - `R`: duty 420 for `550 ms`.
+  - `F`: trim left=498/right=500 for `2000 ms`, approximately one 70 cm cell.
+  - `H`: trim left=498/right=500 for `1000 ms`, approximately one half cell
+    and useful for turning around cell centers.
+  - `L`: centered left turn, expanded internally as `H,L,H`; the turn phase
+    uses duty 420 for `550 ms`.
+  - `R`: centered right turn, expanded internally as `H,R,H`; the turn phase
+    uses duty 420 for `550 ms`.
   - `U`: duty 420 for `1900 ms`.
   - `W`: stop for `200 ms`.
   - `S`: stop for `200 ms`.
+  - Do not manually type `H,R,H` or `H,L,H` around `R`/`L` unless extra
+    half-cell movement is intentional.
 - Example Start-to-Exit:
-  - `route_set_exit F,R,F,F,L,F`
-  - `route_run_exit`
+  - `route_set_exit F,R,F,L,F`
+  - PC13 short press runs the exit route if it is set.
 - Example Exit-to-Start:
-  - `route_set_return U,F,L,F,F,R,F`
-  - `route_run_return`
+  - `route_set_return U,F,L,F,R,F`
+  - PC13 short press while the exit route is active stops the route and arms
+    return; the next PC13 short press runs the return route if it is set.
+- The serial commands `route_run_exit` and `route_run_return` remain available
+  for direct route playback from the terminal.
 - Routes start only from `IDLE` with no active fault. Forward steps keep LiDAR
   front safety stop/wait behavior.
 - During route playback, `route_stop`, `script_stop`, fault, ESTOP, or PC13
   short press stops the chassis. PC13 long press still triggers USER_ESTOP.
 - Use `route_status` to inspect saved tokens, current route state, token index,
-  current action, elapsed time, and remaining time.
+  original token, expanded phase, current action, elapsed time, and remaining
+  time. Status output reports `centered_turn=enabled`.
 
 Benchmark forward calibration:
 
@@ -303,5 +317,6 @@ Benchmark forward calibration:
   `3000 ms`.
 - It starts only from `IDLE` with no active fault.
 - Startup is rejected when front LiDAR is invalid/stale or below `250 mm`.
-- Use `bench_fwd 1000` as a starting calibration run, `bench_stop` for immediate
-  stop, and `bench_status` for duration/elapsed/remaining timing.
+- Use `bench_fwd 2000` for the calibrated 70 cm cell run, `bench_fwd 1000` for
+  an approximate half-cell check, `bench_stop` for immediate stop, and
+  `bench_status` for duration/elapsed/remaining timing.

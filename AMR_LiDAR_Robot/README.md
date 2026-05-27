@@ -282,16 +282,20 @@ Safety:
 Experimental benchmark script mode:
 
 - On the `exp/benchmark-script` branch, PC13 short press is also mapped to the
-  experimental script controller:
-  - short press 1 in IDLE starts `script_auto` reactive exploration,
-  - short press 2 while `script_auto` is running stops auto and arms return,
-  - short press 3 in IDLE starts `script_return_auto`,
-  - short press 4 while `script_return_auto` is running stops return and resets
-    the button flow to auto,
+  experimental route/script controller:
+  - if an exit manual route has been set, short press in IDLE starts
+    `route_exit`,
+  - short press while `route_exit` is running stops the route and arms return,
+  - if a return manual route has been set and return is armed, the next short
+    press in IDLE starts `route_return`,
+  - short press while `route_return` is running stops the route and resets the
+    button flow to auto/exit,
+  - if no manual route is set for the current button phase, the existing
+    `script_auto` / `script_return_auto` fallback flow is used,
   - short press in non-IDLE non-script states requests stop,
   - short press in FAULT/ESTOP is ignored; long press is required to clear fault.
-- Exit detection is manual by PC13 short press, and `script_return_auto` is a
-  reactive return attempt, not guaranteed map-based return-to-start.
+- Exit detection and return arming are manual by PC13 short press; route and
+  reactive fallback modes are not guaranteed map-based return-to-start.
 - PC13 long press behavior is unchanged:
   - running state: USER_ESTOP,
   - FAULT/ESTOP state: clear fault and reset odometry/map.
@@ -336,24 +340,33 @@ Experimental manual route mode:
   autonomous map exploration, A*, or SLAM.
 - Maximum route token count: `64`.
 - Supported tokens:
-  - `F`: forward one cell, trim left=498 and right=500 for `900 ms`.
-  - `L`: turn left at duty 420 for `550 ms`.
-  - `R`: turn right at duty 420 for `550 ms`.
+  - `F`: forward one 70 cm cell, trim left=498 and right=500 for `2000 ms`.
+  - `H`: forward half cell, trim left=498 and right=500 for `1000 ms`,
+    useful for turning around cell centers.
+  - `L`: centered left turn, expanded internally as `H,L,H`; the turn phase
+    uses duty 420 for `550 ms`.
+  - `R`: centered right turn, expanded internally as `H,R,H`; the turn phase
+    uses duty 420 for `550 ms`.
   - `U`: timed 180-degree turn-around at duty 420 for `1900 ms`.
   - `W`: wait/stop for `200 ms`.
   - `S`: stop for `200 ms`.
+  - Do not manually type `H,R,H` or `H,L,H` around `R`/`L` unless extra
+    half-cell movement is intentional.
 - Example Start-to-Exit route:
-  - `route_set_exit F,R,F,F,L,F`
-  - `route_run_exit`
+  - `route_set_exit F,R,F,L,F`
+  - PC13 short press runs the exit route if it is set.
 - Example Exit-to-Start route:
-  - `route_set_return U,F,L,F,F,R,F`
-  - `route_run_return`
+  - `route_set_return U,F,L,F,R,F`
+  - PC13 short press while the exit route is active stops the route and arms
+    return; the next PC13 short press runs the return route if it is set.
+- The serial commands `route_run_exit` and `route_run_return` remain available
+  for direct route playback from the terminal.
 - Routes only start from IDLE with no active fault. Forward route steps keep the
   LiDAR front safety stop/wait behavior.
 - `route_stop`, `script_stop`, fault, ESTOP, or PC13 short press during route
   playback stops the chassis.
-- `route_status` prints saved exit/return tokens, current route state, token
-  index/action, elapsed time, and remaining time.
+- `route_status` prints saved exit/return tokens, current route state,
+  original token, expanded phase, elapsed time, and remaining time.
 
 Experimental benchmark calibration:
 
@@ -364,4 +377,5 @@ Experimental benchmark calibration:
   the front LiDAR reading is invalid/stale or below `250 mm`.
 - `bench_stop` stops immediately, and `bench_status` prints duration, elapsed,
   and remaining time.
-- Suggested 70 cm cell calibration command: `bench_fwd 1000`.
+- Calibrated 70 cm cell command: `bench_fwd 2000`; `bench_fwd 1000` is
+  approximately a half-cell check.

@@ -147,6 +147,24 @@ static void App_ButtonControl_HandleShortPress(void)
         return;
     }
 
+    if (AppBenchmarkRoute_IsActive() != 0U)
+    {
+        if (AppBenchmarkRoute_IsReturnActive() != 0U)
+        {
+            APP_LOG("[BTN] short action=route_return_stop");
+            AppBenchmarkRoute_Stop("button_route_return_stop");
+            app_button_benchmark_mode = BTN_BENCH_NEXT_AUTO;
+        }
+        else
+        {
+            APP_LOG("[BTN] short action=route_stop_next_return");
+            AppBenchmarkRoute_Stop("button_route_exit_stop");
+            app_button_benchmark_mode = BTN_BENCH_NEXT_RETURN;
+        }
+
+        return;
+    }
+
     if (AppBenchmarkScript_IsAutoActive() != 0U)
     {
         APP_LOG("[BTN] short action=auto_stop_next_return");
@@ -191,12 +209,28 @@ static void App_ButtonControl_HandleShortPress(void)
 
     if (app_button_benchmark_mode == BTN_BENCH_NEXT_RETURN)
     {
+        if (AppBenchmarkRoute_HasReturn() != 0U)
+        {
+            APP_LOG("[BTN] short action=route_return");
+            AppBenchmarkRoute_RunReturn();
+            app_button_benchmark_mode = BTN_BENCH_RETURN_RUNNING;
+            return;
+        }
+
         APP_LOG("[BTN] short action=return_auto");
         AppBenchmarkScript_StartReturnAuto();
         app_button_benchmark_mode = BTN_BENCH_RETURN_RUNNING;
     }
     else
     {
+        if (AppBenchmarkRoute_HasExit() != 0U)
+        {
+            APP_LOG("[BTN] short action=route_exit");
+            AppBenchmarkRoute_RunExit();
+            app_button_benchmark_mode = BTN_BENCH_AUTO_RUNNING;
+            return;
+        }
+
         APP_LOG("[BTN] short action=script_auto");
         AppBenchmarkScript_StartAuto();
         app_button_benchmark_mode = BTN_BENCH_AUTO_RUNNING;
