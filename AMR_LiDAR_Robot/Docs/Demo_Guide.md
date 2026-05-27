@@ -65,11 +65,22 @@ Experimental benchmark script commands:
 - `script_auto_stop`: alias for stopping the active experimental script.
 - `script_status`: print script state, step index, action, elapsed, and remaining time.
 - `script_reset`: reset script state.
+- `route_set_exit <tokens>`: set an experimental manual Start-to-Exit route.
+- `route_set_return <tokens>`: set an experimental manual Exit-to-Start route.
+- `route_run_exit`: run the saved manual Start-to-Exit timed route.
+- `route_run_return`: run the saved manual Exit-to-Start timed route.
+- `route_status`: print saved routes, active route state, token index/action, elapsed, and remaining time.
+- `route_clear`: clear saved manual routes.
+- `bench_fwd <ms>`: run forward trim for 100 to 3000 ms for 70 cm cell calibration.
+- `bench_stop`: stop benchmark calibration motion immediately.
+- `bench_status`: print benchmark calibration state, duration, elapsed, and remaining time.
 
 The benchmark script modes are experimental. The fixed scripts are time-based,
 and `script_auto` / `script_return_auto` are simple reactive fallbacks for
 continuous maze exploration and return attempts. They are not claimed as full
-autonomous SLAM, mapping, A*, or Start-to-Exit-to-Return navigation.
+autonomous SLAM, mapping, A*, or Start-to-Exit-to-Return navigation. Manual
+route mode is also experimental timed playback from observed route tokens, not
+autonomous map exploration.
 
 ## 3. Pre-Demo Checklist
 
@@ -223,7 +234,7 @@ Experimental `script_return_auto` reactive mode:
 
 - Starts only from `AMR_STATE_IDLE` with no active fault.
 - `SCRIPT_RETURN_AUTO_TURN_AROUND`: start with a timed 180-degree turn-around,
-  turning right at duty `420` for `1750 ms`.
+  turning right at duty `420` for `1900 ms`.
 - `SCRIPT_RETURN_AUTO_FORWARD`: after turn-around, drive forward with trim
   left=498, right=500.
 - `SCRIPT_RETURN_AUTO_TURN_LEFT`: if fresh front LiDAR is below `360 mm`, stop
@@ -256,3 +267,41 @@ Safety behavior:
   distance is above `450 mm`.
 - Fault, ESTOP, or `script_stop` stops the script immediately.
 - Use `script_status` to inspect state and timing.
+
+Manual route script fallback:
+
+- Use this only as an experimental benchmark fallback after observing the 5x5
+  maze layout on acceptance day.
+- Maximum route token count is `64`.
+- Tokens are `F` forward one cell, `L` left 90 degrees, `R` right 90 degrees,
+  `U` turn around 180 degrees, `W` short wait, and `S` stop.
+- Current timing parameters:
+  - `F`: trim left=498/right=500 for `900 ms`.
+  - `L`: duty 420 for `550 ms`.
+  - `R`: duty 420 for `550 ms`.
+  - `U`: duty 420 for `1900 ms`.
+  - `W`: stop for `200 ms`.
+  - `S`: stop for `200 ms`.
+- Example Start-to-Exit:
+  - `route_set_exit F,R,F,F,L,F`
+  - `route_run_exit`
+- Example Exit-to-Start:
+  - `route_set_return U,F,L,F,F,R,F`
+  - `route_run_return`
+- Routes start only from `IDLE` with no active fault. Forward steps keep LiDAR
+  front safety stop/wait behavior.
+- During route playback, `route_stop`, `script_stop`, fault, ESTOP, or PC13
+  short press stops the chassis. PC13 long press still triggers USER_ESTOP.
+- Use `route_status` to inspect saved tokens, current route state, token index,
+  current action, elapsed time, and remaining time.
+
+Benchmark forward calibration:
+
+- `bench_fwd <ms>` is an experimental calibration command for measuring the
+  forward duration needed for a 70 cm cell.
+- It uses benchmark forward trim left=498/right=500 and accepts `100` to
+  `3000 ms`.
+- It starts only from `IDLE` with no active fault.
+- Startup is rejected when front LiDAR is invalid/stale or below `250 mm`.
+- Use `bench_fwd 1000` as a starting calibration run, `bench_stop` for immediate
+  stop, and `bench_status` for duration/elapsed/remaining timing.

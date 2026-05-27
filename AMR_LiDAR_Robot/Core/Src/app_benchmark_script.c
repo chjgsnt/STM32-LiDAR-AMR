@@ -9,6 +9,8 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <string.h>
 
 #define SCRIPT_OBSTACLE_STOP_MM 250U
 #define SCRIPT_OBSTACLE_CLEAR_MM 450U
@@ -18,10 +20,26 @@
 #define BENCH_FORWARD_RIGHT_DUTY 500
 #define AUTO_TURN_DUTY 420
 #define AUTO_TURN_RIGHT_MS 550U
-#define RETURN_AUTO_TURN_AROUND_MS 1750U
+#define RETURN_AUTO_TURN_AROUND_MS 1900U
 #define RETURN_AUTO_TURN_LEFT_MS 550U
 #define AUTO_OBSTACLE_STOP_MM 360U
 #define AUTO_OBSTACLE_CLEAR_MM 520U
+#define ROUTE_MAX_TOKENS 64U
+#define ROUTE_FORWARD_MS 900U
+#define ROUTE_TURN_LEFT_MS 550U
+#define ROUTE_TURN_RIGHT_MS 550U
+#define ROUTE_WAIT_MS 200U
+#define ROUTE_STOP_MS 200U
+#define ROUTE_TEXT_MAX (ROUTE_MAX_TOKENS * 2U)
+#define BENCH_FWD_MIN_MS 100U
+#define BENCH_FWD_MAX_MS 3000U
+#define BENCH_FWD_REJECT_FRONT_MM 250U
+
+typedef enum
+{
+    ROUTE_SLOT_EXIT = 0,
+    ROUTE_SLOT_RETURN
+} ManualRouteSlot_t;
 
 typedef struct
 {
@@ -65,6 +83,31 @@ static const BenchmarkScriptDef_t return_script = {
     (uint8_t)(sizeof(return_script_steps) / sizeof(return_script_steps[0])),
 };
 
+static BenchmarkScriptStep_t route_exit_steps[ROUTE_MAX_TOKENS];
+static BenchmarkScriptStep_t route_return_steps[ROUTE_MAX_TOKENS];
+static BenchmarkScriptStep_t route_parse_steps[ROUTE_MAX_TOKENS];
+static char route_exit_tokens[ROUTE_MAX_TOKENS];
+static char route_return_tokens[ROUTE_MAX_TOKENS];
+static char route_parse_tokens[ROUTE_MAX_TOKENS];
+static BenchmarkScriptDef_t route_exit_script = {
+    "route_exit",
+    route_exit_steps,
+    0U,
+};
+static BenchmarkScriptDef_t route_return_script = {
+    "route_return",
+    route_return_steps,
+    0U,
+};
+static BenchmarkScriptStep_t bench_forward_steps[] = {
+    {SCRIPT_ACT_FORWARD, BENCH_FORWARD_RIGHT_DUTY, ROUTE_FORWARD_MS, "bench forward"},
+};
+static BenchmarkScriptDef_t bench_forward_script = {
+    "bench_fwd",
+    bench_forward_steps,
+    (uint8_t)(sizeof(bench_forward_steps) / sizeof(bench_forward_steps[0])),
+};
+
 static BenchmarkScriptState_t script_state = SCRIPT_IDLE;
 static const BenchmarkScriptDef_t *script_current = NULL;
 static uint8_t script_step_index = 0U;
@@ -76,6 +119,8 @@ static uint8_t script_step_active = 0U;
 static uint8_t script_step_just_started = 0U;
 static ScriptAction script_current_action = SCRIPT_ACT_STOP;
 static uint8_t script_current_action_valid = 0U;
+static uint32_t bench_forward_duration_ms = ROUTE_FORWARD_MS;
+static uint32_t bench_forward_last_elapsed_ms = 0U;
 
 static void AppBenchmarkScript_Start(const BenchmarkScriptDef_t *script);
 static void AppBenchmarkScript_ClearRuntime(void);
@@ -103,6 +148,16 @@ static void AppBenchmarkScript_EnterReturnAutoTurnAround(uint32_t now_ms, const 
 static void AppBenchmarkScript_EnterReturnAutoForward(uint32_t now_ms, const char *reason);
 static void AppBenchmarkScript_EnterReturnAutoTurnLeft(uint32_t now_ms, uint32_t front_mm);
 static void AppBenchmarkScript_EnterReturnAutoWaitClear(uint32_t now_ms, const char *reason);
+static uint8_t AppBenchmarkScript_SetRoute(ManualRouteSlot_t slot, const char *tokens);
+static uint8_t AppBenchmarkScript_RouteTokenToStep(char token, BenchmarkScriptStep_t *step);
+static uint8_t AppBenchmarkScript_IsRouteScript(const BenchmarkScriptDef_t *script);
+static uint8_t AppBenchmarkScript_IsBenchScript(const BenchmarkScriptDef_t *script);
+static char AppBenchmarkScript_CurrentRouteToken(void);
+static void AppBenchmarkScript_FormatRouteTokens(const char *tokens,
+                                                 uint8_t count,
+                                                 char *buffer,
+                                                 uint32_t buffer_len);
+static uint8_t AppBenchmarkScript_BenchFrontSafeToStart(uint32_t now_ms);
 static const BenchmarkScriptStep_t *AppBenchmarkScript_CurrentStep(void);
 static uint32_t AppBenchmarkScript_ElapsedMs(uint32_t now_ms, uint32_t then_ms);
 static bool AppBenchmarkScript_LidarFrontClear(uint32_t now_ms);
@@ -228,6 +283,213 @@ void AppBenchmarkScript_StartReturnAuto(void)
             (unsigned int)AUTO_OBSTACLE_STOP_MM,
             (unsigned int)AUTO_OBSTACLE_CLEAR_MM);
     AppBenchmarkScript_EnterReturnAutoTurnAround(now_ms, "start");
+}
+
+void AppBenchmarkScript_SetRouteExit(const char *tokens)
+{
+    (void)AppBenchmarkScript_SetRoute(ROUTE_SLOT_EXIT, tokens);
+}
+
+void AppBenchmarkScript_SetRouteReturn(const char *tokens)
+{
+    (void)AppBenchmarkScript_SetRoute(ROUTE_SLOT_RETURN, tokens);
+}
+
+void AppBenchmarkScript_StartRouteExit(void)
+{
+    if (route_exit_script.count == 0U)
+    {
+        APP_LOG("ROUTE: run_exit rejected reason=empty_route");
+        return;
+    }
+
+    APP_LOG("ROUTE: run_exit count=%u", (unsigned int)route_exit_script.count);
+    AppBenchmarkScript_Start(&route_exit_script);
+}
+
+void AppBenchmarkScript_StartRouteReturn(void)
+{
+    if (route_return_script.count == 0U)
+    {
+        APP_LOG("ROUTE: run_return rejected reason=empty_route");
+        return;
+    }
+
+    APP_LOG("ROUTE: run_return count=%u", (unsigned int)route_return_script.count);
+    AppBenchmarkScript_Start(&route_return_script);
+}
+
+void AppBenchmarkScript_PrintRouteStatus(void)
+{
+    char exit_text[ROUTE_TEXT_MAX];
+    char return_text[ROUTE_TEXT_MAX];
+    const BenchmarkScriptStep_t *step = AppBenchmarkScript_CurrentStep();
+    uint32_t now_ms = HAL_GetTick();
+    uint32_t elapsed_ms = 0U;
+    uint32_t remaining_ms = 0U;
+    uint8_t display_index = 0U;
+    uint8_t total_count = 0U;
+    char token = '-';
+    const char *route_name = "none";
+    const char *action_name = "NONE";
+
+    AppBenchmarkScript_FormatRouteTokens(route_exit_tokens,
+                                         route_exit_script.count,
+                                         exit_text,
+                                         (uint32_t)sizeof(exit_text));
+    AppBenchmarkScript_FormatRouteTokens(route_return_tokens,
+                                         route_return_script.count,
+                                         return_text,
+                                         (uint32_t)sizeof(return_text));
+
+    if (AppBenchmarkScript_IsRouteScript(script_current) != 0U)
+    {
+        route_name = script_current->name;
+        total_count = script_current->count;
+        if (step != NULL)
+        {
+            display_index = (uint8_t)(script_step_index + 1U);
+            token = AppBenchmarkScript_CurrentRouteToken();
+            if (script_current_action_valid != 0U)
+            {
+                action_name = AppBenchmarkScript_ActionName(script_current_action);
+            }
+
+            if (script_step_active != 0U)
+            {
+                elapsed_ms = AppBenchmarkScript_ElapsedMs(now_ms, script_step_start_ms);
+            }
+
+            remaining_ms = (elapsed_ms < step->duration_ms) ? (step->duration_ms - elapsed_ms) : 0U;
+        }
+        else
+        {
+            display_index = total_count;
+        }
+    }
+
+    APP_LOG("ROUTE: exit count=%u tokens=%s",
+            (unsigned int)route_exit_script.count,
+            exit_text);
+    APP_LOG("ROUTE: return count=%u tokens=%s",
+            (unsigned int)route_return_script.count,
+            return_text);
+    APP_LOG("ROUTE: status state=%s route=%s index=%u/%u token=%c action=%s elapsed=%lums remaining=%lums",
+            AppBenchmarkScript_StateName(script_state),
+            route_name,
+            (unsigned int)display_index,
+            (unsigned int)total_count,
+            token,
+            action_name,
+            (unsigned long)elapsed_ms,
+            (unsigned long)remaining_ms);
+}
+
+void AppBenchmarkScript_ClearRoutes(void)
+{
+    if (AppBenchmarkScript_IsActiveState(script_state))
+    {
+        APP_LOG("ROUTE: clear rejected reason=busy state=%s", AppBenchmarkScript_StateName(script_state));
+        return;
+    }
+
+    route_exit_script.count = 0U;
+    route_return_script.count = 0U;
+    memset(route_exit_tokens, 0, sizeof(route_exit_tokens));
+    memset(route_return_tokens, 0, sizeof(route_return_tokens));
+    if (AppBenchmarkScript_IsRouteScript(script_current) != 0U)
+    {
+        script_current = NULL;
+        script_step_index = 0U;
+        script_state = SCRIPT_IDLE;
+        AppBenchmarkScript_ClearRuntime();
+    }
+
+    APP_LOG("ROUTE: cleared max_tokens=%u", (unsigned int)ROUTE_MAX_TOKENS);
+}
+
+void AppBenchmarkScript_StartBenchForward(uint32_t duration_ms)
+{
+    uint32_t now_ms;
+
+    if (script_initialized == 0U)
+    {
+        AppBenchmarkScript_Init();
+    }
+
+    if ((duration_ms < BENCH_FWD_MIN_MS) || (duration_ms > BENCH_FWD_MAX_MS))
+    {
+        APP_LOG("BENCH: fwd rejected reason=duration_range duration=%lums min=%u max=%u",
+                (unsigned long)duration_ms,
+                (unsigned int)BENCH_FWD_MIN_MS,
+                (unsigned int)BENCH_FWD_MAX_MS);
+        return;
+    }
+
+    if (AppBenchmarkScript_IsActiveState(script_state))
+    {
+        APP_LOG("BENCH: fwd rejected reason=busy state=%s", AppBenchmarkScript_StateName(script_state));
+        return;
+    }
+
+    if (AMR_GetState() != AMR_STATE_IDLE)
+    {
+        APP_LOG("BENCH: fwd rejected reason=amr_state state=%s", AMR_StateName(AMR_GetState()));
+        return;
+    }
+
+    if (AppFault_IsActive())
+    {
+        APP_LOG("BENCH: fwd rejected reason=fault fault=%s", AppFault_Name(AppFault_Get()));
+        return;
+    }
+
+    now_ms = HAL_GetTick();
+    if (AppBenchmarkScript_BenchFrontSafeToStart(now_ms) == 0U)
+    {
+        return;
+    }
+
+    bench_forward_duration_ms = duration_ms;
+    bench_forward_last_elapsed_ms = 0U;
+    bench_forward_steps[0].duration_ms = duration_ms;
+    APP_LOG("BENCH: fwd start duration=%lums dutyL=%d dutyR=%d front_reject=%umm",
+            (unsigned long)duration_ms,
+            (int)BENCH_FORWARD_LEFT_DUTY,
+            (int)BENCH_FORWARD_RIGHT_DUTY,
+            (unsigned int)BENCH_FWD_REJECT_FRONT_MM);
+    AppBenchmarkScript_Start(&bench_forward_script);
+}
+
+void AppBenchmarkScript_PrintBenchStatus(void)
+{
+    const BenchmarkScriptStep_t *step = AppBenchmarkScript_CurrentStep();
+    uint32_t now_ms = HAL_GetTick();
+    uint32_t elapsed_ms = 0U;
+    uint32_t remaining_ms = 0U;
+
+    if (AppBenchmarkScript_IsBenchScript(script_current) != 0U)
+    {
+        if (step != NULL)
+        {
+            if (script_step_active != 0U)
+            {
+                elapsed_ms = AppBenchmarkScript_ElapsedMs(now_ms, script_step_start_ms);
+            }
+
+            remaining_ms = (elapsed_ms < bench_forward_duration_ms) ? (bench_forward_duration_ms - elapsed_ms) : 0U;
+        }
+        else if (script_state == SCRIPT_DONE)
+        {
+            elapsed_ms = bench_forward_last_elapsed_ms;
+        }
+    }
+
+    APP_LOG("BENCH: status state=%s duration=%lums elapsed=%lums remaining=%lums",
+            AppBenchmarkScript_StateName(script_state),
+            (unsigned long)bench_forward_duration_ms,
+            (unsigned long)elapsed_ms,
+            (unsigned long)remaining_ms);
 }
 
 void AppBenchmarkScript_Stop(const char *reason)
@@ -474,6 +736,8 @@ const char *AppBenchmarkScript_ActionName(ScriptAction action)
             return "TURN_LEFT";
         case SCRIPT_ACT_TURN_RIGHT:
             return "TURN_RIGHT";
+        case SCRIPT_ACT_TURN_AROUND:
+            return "TURN_AROUND";
         default:
             return "UNKNOWN";
     }
@@ -616,6 +880,10 @@ static void AppBenchmarkScript_ApplyAction(const BenchmarkScriptStep_t *step)
             Chassis_TurnRight(step->duty);
             break;
 
+        case SCRIPT_ACT_TURN_AROUND:
+            Chassis_TurnRight(step->duty);
+            break;
+
         default:
             Chassis_Stop();
             break;
@@ -640,6 +908,11 @@ static void AppBenchmarkScript_FinishStep(uint32_t now_ms)
             (unsigned int)(script_step_index + 1U),
             (unsigned int)((script_current != NULL) ? script_current->count : 0U),
             (unsigned long)elapsed_ms);
+
+    if (AppBenchmarkScript_IsBenchScript(script_current) != 0U)
+    {
+        bench_forward_last_elapsed_ms = elapsed_ms;
+    }
 
     script_step_index++;
     if ((script_current == NULL) || (script_step_index >= script_current->count))
@@ -1037,6 +1310,256 @@ static void AppBenchmarkScript_EnterReturnAutoWaitClear(uint32_t now_ms, const c
     APP_LOG("SCRIPT: return_auto state=WAIT_CLEAR reason=%s clear=%u",
             (reason != NULL) ? reason : "none",
             (unsigned int)AUTO_OBSTACLE_CLEAR_MM);
+}
+
+static uint8_t AppBenchmarkScript_SetRoute(ManualRouteSlot_t slot, const char *tokens)
+{
+    uint8_t parsed_count = 0U;
+    const char *cursor = tokens;
+    BenchmarkScriptStep_t *target_steps;
+    char *target_tokens;
+    BenchmarkScriptDef_t *target_script;
+    const char *target_name;
+
+    if (script_initialized == 0U)
+    {
+        AppBenchmarkScript_Init();
+    }
+
+    if (AppBenchmarkScript_IsActiveState(script_state))
+    {
+        APP_LOG("ROUTE: set rejected reason=busy state=%s", AppBenchmarkScript_StateName(script_state));
+        return 0U;
+    }
+
+    if ((tokens == NULL) || (tokens[0] == '\0'))
+    {
+        APP_LOG("ROUTE: set rejected reason=empty_tokens");
+        return 0U;
+    }
+
+    while ((cursor != NULL) && (*cursor != '\0'))
+    {
+        char ch = *cursor;
+
+        if ((ch == ' ') || (ch == ','))
+        {
+            cursor++;
+            continue;
+        }
+
+        if ((ch >= 'A') && (ch <= 'Z'))
+        {
+            ch = (char)(ch + ('a' - 'A'));
+        }
+
+        if (parsed_count >= ROUTE_MAX_TOKENS)
+        {
+            APP_LOG("ROUTE: set rejected reason=too_many_tokens max=%u",
+                    (unsigned int)ROUTE_MAX_TOKENS);
+            return 0U;
+        }
+
+        if (AppBenchmarkScript_RouteTokenToStep(ch, &route_parse_steps[parsed_count]) == 0U)
+        {
+            APP_LOG("ROUTE: set rejected reason=bad_token token=%c valid=F,L,R,U,W,S", ch);
+            return 0U;
+        }
+
+        route_parse_tokens[parsed_count] = ch;
+        parsed_count++;
+        cursor++;
+    }
+
+    if (parsed_count == 0U)
+    {
+        APP_LOG("ROUTE: set rejected reason=empty_tokens");
+        return 0U;
+    }
+
+    if (slot == ROUTE_SLOT_RETURN)
+    {
+        target_steps = route_return_steps;
+        target_tokens = route_return_tokens;
+        target_script = &route_return_script;
+        target_name = "return";
+    }
+    else
+    {
+        target_steps = route_exit_steps;
+        target_tokens = route_exit_tokens;
+        target_script = &route_exit_script;
+        target_name = "exit";
+    }
+
+    memcpy(target_steps, route_parse_steps, (size_t)parsed_count * sizeof(route_parse_steps[0]));
+    memcpy(target_tokens, route_parse_tokens, (size_t)parsed_count * sizeof(route_parse_tokens[0]));
+    if (parsed_count < ROUTE_MAX_TOKENS)
+    {
+        memset(&target_tokens[parsed_count], 0, (size_t)(ROUTE_MAX_TOKENS - parsed_count));
+    }
+
+    target_script->count = parsed_count;
+
+    APP_LOG("ROUTE: set_%s count=%u max=%u F=%ums L=%ums R=%ums U=%ums turn_duty=%d stop=%ums",
+            target_name,
+            (unsigned int)parsed_count,
+            (unsigned int)ROUTE_MAX_TOKENS,
+            (unsigned int)ROUTE_FORWARD_MS,
+            (unsigned int)ROUTE_TURN_LEFT_MS,
+            (unsigned int)ROUTE_TURN_RIGHT_MS,
+            (unsigned int)RETURN_AUTO_TURN_AROUND_MS,
+            (int)AUTO_TURN_DUTY,
+            (unsigned int)ROUTE_STOP_MS);
+    return 1U;
+}
+
+static uint8_t AppBenchmarkScript_RouteTokenToStep(char token, BenchmarkScriptStep_t *step)
+{
+    char normalized = token;
+
+    if (step == NULL)
+    {
+        return 0U;
+    }
+
+    if ((normalized >= 'A') && (normalized <= 'Z'))
+    {
+        normalized = (char)(normalized + ('a' - 'A'));
+    }
+
+    switch (normalized)
+    {
+        case 'f':
+            step->action = SCRIPT_ACT_FORWARD;
+            step->duty = BENCH_FORWARD_RIGHT_DUTY;
+            step->duration_ms = ROUTE_FORWARD_MS;
+            step->note = "manual route forward";
+            return 1U;
+
+        case 'l':
+            step->action = SCRIPT_ACT_TURN_LEFT;
+            step->duty = AUTO_TURN_DUTY;
+            step->duration_ms = ROUTE_TURN_LEFT_MS;
+            step->note = "manual route left";
+            return 1U;
+
+        case 'r':
+            step->action = SCRIPT_ACT_TURN_RIGHT;
+            step->duty = AUTO_TURN_DUTY;
+            step->duration_ms = ROUTE_TURN_RIGHT_MS;
+            step->note = "manual route right";
+            return 1U;
+
+        case 'u':
+            step->action = SCRIPT_ACT_TURN_AROUND;
+            step->duty = AUTO_TURN_DUTY;
+            step->duration_ms = RETURN_AUTO_TURN_AROUND_MS;
+            step->note = "manual route turnaround";
+            return 1U;
+
+        case 'w':
+            step->action = SCRIPT_ACT_WAIT;
+            step->duty = 0;
+            step->duration_ms = ROUTE_WAIT_MS;
+            step->note = "manual route wait";
+            return 1U;
+
+        case 's':
+            step->action = SCRIPT_ACT_STOP;
+            step->duty = 0;
+            step->duration_ms = ROUTE_STOP_MS;
+            step->note = "manual route stop";
+            return 1U;
+
+        default:
+            return 0U;
+    }
+}
+
+static uint8_t AppBenchmarkScript_IsRouteScript(const BenchmarkScriptDef_t *script)
+{
+    return ((script == &route_exit_script) || (script == &route_return_script)) ? 1U : 0U;
+}
+
+static uint8_t AppBenchmarkScript_IsBenchScript(const BenchmarkScriptDef_t *script)
+{
+    return (script == &bench_forward_script) ? 1U : 0U;
+}
+
+static char AppBenchmarkScript_CurrentRouteToken(void)
+{
+    if (script_current == &route_exit_script)
+    {
+        return (script_step_index < route_exit_script.count) ? (char)(route_exit_tokens[script_step_index] - ('a' - 'A')) : '-';
+    }
+
+    if (script_current == &route_return_script)
+    {
+        return (script_step_index < route_return_script.count) ? (char)(route_return_tokens[script_step_index] - ('a' - 'A')) : '-';
+    }
+
+    return '-';
+}
+
+static void AppBenchmarkScript_FormatRouteTokens(const char *tokens,
+                                                 uint8_t count,
+                                                 char *buffer,
+                                                 uint32_t buffer_len)
+{
+    uint32_t pos = 0U;
+    uint8_t i;
+
+    if ((buffer == NULL) || (buffer_len == 0U))
+    {
+        return;
+    }
+
+    if ((tokens == NULL) || (count == 0U))
+    {
+        (void)snprintf(buffer, buffer_len, "(empty)");
+        return;
+    }
+
+    for (i = 0U; i < count; i++)
+    {
+        char token = (char)(tokens[i] - ('a' - 'A'));
+
+        if ((i != 0U) && (pos < (buffer_len - 1U)))
+        {
+            buffer[pos] = ',';
+            pos++;
+        }
+
+        if (pos < (buffer_len - 1U))
+        {
+            buffer[pos] = token;
+            pos++;
+        }
+    }
+
+    buffer[pos] = '\0';
+}
+
+static uint8_t AppBenchmarkScript_BenchFrontSafeToStart(uint32_t now_ms)
+{
+    const AppLidarStatus *lidar = App_Lidar_GetStatus();
+
+    if (AppBenchmarkScript_LidarFrontStale(now_ms))
+    {
+        APP_LOG("BENCH: fwd rejected reason=lidar_invalid_or_stale");
+        return 0U;
+    }
+
+    if ((lidar != NULL) && (lidar->front_valid != 0U) && (lidar->front_min_mm < BENCH_FWD_REJECT_FRONT_MM))
+    {
+        APP_LOG("BENCH: fwd rejected reason=front_too_close front=%u min=%u",
+                (unsigned int)lidar->front_min_mm,
+                (unsigned int)BENCH_FWD_REJECT_FRONT_MM);
+        return 0U;
+    }
+
+    return 1U;
 }
 
 static const BenchmarkScriptStep_t *AppBenchmarkScript_CurrentStep(void)

@@ -20,8 +20,8 @@
 #include <stdio.h>
 #include <string.h>
 
-#define APP_CMD_LINE_MAX 40U
-#define APP_CMD_RX_QUEUE_SIZE 64U
+#define APP_CMD_LINE_MAX 192U
+#define APP_CMD_RX_QUEUE_SIZE 256U
 #define APP_CMD_PENDING_QUEUE_SIZE 4U
 #define APP_CMD_NO_NEWLINE_TIMEOUT_MS 250U
 #define APP_CMD_STATUS_RATE_LIMIT_MS 500U
@@ -60,6 +60,8 @@ static uint8_t App_SerialCommand_ParseMotorTestCommand(const char *line,
                                                        char *mode,
                                                        int16_t *duty,
                                                        uint32_t *duration_ms);
+static uint8_t App_SerialCommand_ParseBenchFwdCommand(const char *line,
+                                                      uint32_t *duration_ms);
 static void App_SerialCommand_RunMotorTest(char mode, int16_t duty, uint32_t duration_ms);
 static char App_SerialCommand_ToLower(char ch);
 static void App_SerialCommand_LogRxChar(char ch);
@@ -90,6 +92,8 @@ void App_SerialCommand_Init(void)
     {
         APP_LOG("[CMD] ready uart=huart2 commands=start stop explore return estop reset_fault odo_reset odom_reset enc_dbg odom_dbg odo_freeze map_reset motor_test status map grid exp ui page tel");
         APP_LOG("[CMD] script commands=script_exit script_return script_auto script_return_auto script_stop script_auto_stop script_status script_reset");
+        APP_LOG("[CMD] route commands=route_set_exit route_set_return route_run_exit route_run_return route_status route_clear route_stop");
+        APP_LOG("[CMD] bench commands=bench_fwd bench_stop bench_status");
         APP_LOG("[CMD] use newline: start<Enter> or no-newline command timeout=%u ms",
                 (unsigned int)APP_CMD_NO_NEWLINE_TIMEOUT_MS);
     }
@@ -297,6 +301,7 @@ static void App_SerialCommand_HandleLine(const char *line)
     char motor_mode = '\0';
     int16_t motor_duty = 0;
     uint32_t motor_duration_ms = 0U;
+    uint32_t bench_duration_ms = 0U;
 
     if (line == NULL)
     {
@@ -390,6 +395,55 @@ static void App_SerialCommand_HandleLine(const char *line)
     {
         AppBenchmarkScript_Reset();
     }
+    else if (strncmp(line, "route_set_exit ", sizeof("route_set_exit ") - 1U) == 0)
+    {
+        AppBenchmarkScript_SetRouteExit(&line[sizeof("route_set_exit ") - 1U]);
+    }
+    else if (strcmp(line, "route_set_exit") == 0)
+    {
+        AppBenchmarkScript_SetRouteExit("");
+    }
+    else if (strncmp(line, "route_set_return ", sizeof("route_set_return ") - 1U) == 0)
+    {
+        AppBenchmarkScript_SetRouteReturn(&line[sizeof("route_set_return ") - 1U]);
+    }
+    else if (strcmp(line, "route_set_return") == 0)
+    {
+        AppBenchmarkScript_SetRouteReturn("");
+    }
+    else if (strcmp(line, "route_run_exit") == 0)
+    {
+        AppBenchmarkScript_StartRouteExit();
+    }
+    else if (strcmp(line, "route_run_return") == 0)
+    {
+        AppBenchmarkScript_StartRouteReturn();
+    }
+    else if (strcmp(line, "route_status") == 0)
+    {
+        AppBenchmarkScript_PrintRouteStatus();
+    }
+    else if (strcmp(line, "route_clear") == 0)
+    {
+        AppBenchmarkScript_ClearRoutes();
+    }
+    else if (strcmp(line, "route_stop") == 0)
+    {
+        AppBenchmarkScript_Stop("serial_route_stop");
+    }
+    else if (App_SerialCommand_ParseBenchFwdCommand(line, &bench_duration_ms) != 0U)
+    {
+        AppBenchmarkScript_StartBenchForward(bench_duration_ms);
+    }
+    else if (strcmp(line, "bench_stop") == 0)
+    {
+        AppBenchmarkScript_Stop("serial_bench_stop");
+        Chassis_Stop();
+    }
+    else if (strcmp(line, "bench_status") == 0)
+    {
+        AppBenchmarkScript_PrintBenchStatus();
+    }
     else if (App_SerialCommand_ParseOdoFreezeCommand(line, &freeze) != 0U)
     {
         AppOdo_SetFreeze(freeze);
@@ -469,6 +523,18 @@ static uint8_t App_SerialCommand_IsKnownCommand(const char *line)
             (strcmp(line, "script_auto_stop") == 0) ||
             (strcmp(line, "script_status") == 0) ||
             (strcmp(line, "script_reset") == 0) ||
+            (strncmp(line, "route_set_exit ", sizeof("route_set_exit ") - 1U) == 0) ||
+            (strcmp(line, "route_set_exit") == 0) ||
+            (strncmp(line, "route_set_return ", sizeof("route_set_return ") - 1U) == 0) ||
+            (strcmp(line, "route_set_return") == 0) ||
+            (strcmp(line, "route_run_exit") == 0) ||
+            (strcmp(line, "route_run_return") == 0) ||
+            (strcmp(line, "route_status") == 0) ||
+            (strcmp(line, "route_clear") == 0) ||
+            (strcmp(line, "route_stop") == 0) ||
+            (App_SerialCommand_ParseBenchFwdCommand(line, NULL) != 0U) ||
+            (strcmp(line, "bench_stop") == 0) ||
+            (strcmp(line, "bench_status") == 0) ||
             (strcmp(line, "map_reset") == 0) ||
             (App_SerialCommand_ParseOdoFreezeCommand(line, NULL) != 0U) ||
             (App_SerialCommand_ParseMotorTestCommand(line, NULL, NULL, NULL) != 0U) ||
@@ -590,6 +656,30 @@ static uint8_t App_SerialCommand_ParseMotorTestCommand(const char *line,
     if (duty != NULL)
     {
         *duty = (int16_t)parsed_duty;
+    }
+
+    if (duration_ms != NULL)
+    {
+        *duration_ms = (uint32_t)parsed_duration_ms;
+    }
+
+    return 1U;
+}
+
+static uint8_t App_SerialCommand_ParseBenchFwdCommand(const char *line,
+                                                      uint32_t *duration_ms)
+{
+    unsigned long parsed_duration_ms;
+    char extra;
+
+    if (line == NULL)
+    {
+        return 0U;
+    }
+
+    if (sscanf(line, "bench_fwd %lu %c", &parsed_duration_ms, &extra) != 1)
+    {
+        return 0U;
     }
 
     if (duration_ms != NULL)

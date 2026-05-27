@@ -31,7 +31,8 @@ typedef enum
     SCRIPT_ACT_FORWARD,
     SCRIPT_ACT_BACKUP,
     SCRIPT_ACT_TURN_LEFT,
-    SCRIPT_ACT_TURN_RIGHT
+    SCRIPT_ACT_TURN_RIGHT,
+    SCRIPT_ACT_TURN_AROUND
 } ScriptAction;
 
 void AppBenchmarkScript_Init(void);
@@ -39,6 +40,14 @@ void AppBenchmarkScript_StartExit(void);
 void AppBenchmarkScript_StartReturn(void);
 void AppBenchmarkScript_StartAuto(void);
 void AppBenchmarkScript_StartReturnAuto(void);
+void AppBenchmarkScript_SetRouteExit(const char *tokens);
+void AppBenchmarkScript_SetRouteReturn(const char *tokens);
+void AppBenchmarkScript_StartRouteExit(void);
+void AppBenchmarkScript_StartRouteReturn(void);
+void AppBenchmarkScript_PrintRouteStatus(void);
+void AppBenchmarkScript_ClearRoutes(void);
+void AppBenchmarkScript_StartBenchForward(uint32_t duration_ms);
+void AppBenchmarkScript_PrintBenchStatus(void);
 void AppBenchmarkScript_Stop(const char *reason);
 void AppBenchmarkScript_Reset(void);
 void AppBenchmarkScript_Update(void);
